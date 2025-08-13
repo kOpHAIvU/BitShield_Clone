@@ -1,0 +1,31 @@
+stages:
+
+  build-models:
+    cmd: docker/run-in-docker.sh ./buildmodels.py
+    deps:
+      - buildmodels.py
+      - cfg.py
+      - models
+    outs:
+      - built:
+          persist: true
+      - built-aux:
+          persist: true
+  ghidra-import:
+    wdir: ghidra
+    cmd: ../docker/run-in-docker.sh ghidra/import-binaries.sh
+    deps:
+      - import-binaries.sh
+      - ../built
+    outs:
+      - db:
+          persist: true
+  ghidra-export-analysis:
+    wdir: ghidra
+    cmd: ../docker/run-in-docker.sh ghidra/export-analysis.sh
+    deps:
+      - export-analysis.sh
+      - export-analysis.py
+      - db
+    outs:
+      - analysis

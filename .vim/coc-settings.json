@@ -1,0 +1,13 @@
+{
+	"languageserver": {
+		"ffi-navigator": {
+			"command": "python",
+			"args": ["-m", "ffi_navigator.langserver"],
+			"filetypes": ["python", "c", "cpp", "h", "hpp"]
+		}
+	},
+	"python.analysis.diagnosticMode": "workspace",
+	"java.compile.nullAnalysis.mode": "automatic",
+	"java.enabled": false,
+	"clangd.fallbackFlags": ["-I/usr/lib/llvm-13/include"]
+}

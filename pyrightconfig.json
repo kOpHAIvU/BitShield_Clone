@@ -1,0 +1,22 @@
+{
+    "venvPath": ".",
+    "venv": "venv",
+    "typeCheckingMode": "basic",
+    "useLibraryCodeForTypes": true,
+    "autoImportCompletions": true,
+    "include": [
+        "**/*.py"
+    ],
+    "exclude": [
+        "**/venv/**",
+        "**/__pycache__/**",
+        "**/.git/**",
+        "**/node_modules/**"
+    ],
+    "reportMissingImports": true,
+    "reportMissingTypeStubs": false,
+    "reportUnusedImport": true,
+    "reportUnusedClass": true,
+    "reportUnusedFunction": true,
+    "reportUnusedVariable": true
+}
