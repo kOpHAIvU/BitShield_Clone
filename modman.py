@@ -7,10 +7,29 @@ import shutil
 
 import torchvision
 import support.models as models
-import tvm
-from tvm.driver import tvmc
-from tvm.target import Target
-from tvm import relay, tir
+
+# Optional TVM imports with fallback
+try:
+    import tvm
+    from tvm.driver import tvmc
+    from tvm.target import Target
+    from tvm import relay, tir
+    from tvm.contrib.debugger import debug_executor
+    from tvm.contrib import graph_executor
+    from tvm.contrib import relay_viz
+    from tvm.contrib.relay_viz.dot import DotPlotter
+    from tvm.contrib.relay_viz.interface import DefaultVizParser
+    TVM_AVAILABLE = True
+except ImportError:
+    print("Warning: TVM not available. Some functionality will be limited.")
+    TVM_AVAILABLE = False
+    class tvm:
+        pass
+    class relay:
+        pass
+    class tir:
+        pass
+
 from collections import namedtuple
 import onnx
 from scipy.special import softmax
@@ -19,13 +38,6 @@ import subprocess
 import ctypes
 import warnings
 import tarfile
-
-from tvm.contrib.debugger import debug_executor
-from tvm.contrib import graph_executor
-
-from tvm.contrib import relay_viz
-from tvm.contrib.relay_viz.dot import DotPlotter
-from tvm.contrib.relay_viz.interface import DefaultVizParser
 
 import utils
 import cgutils
@@ -351,6 +363,9 @@ def build_module(
     return gemod, gefmod
 
 def build_module_tvmc(irmod, params, export_path=None, target=targets['avx2'], **kwargs):
+    if not TVM_AVAILABLE:
+        raise ImportError("TVM is required for build_module_tvmc but not available. Please install TVM or use Docker.")
+    
     start_time = time.time()
     with tempfile.NamedTemporaryFile() as tmpf:
         tvmc_mod = tvmc.TVMCModel(irmod, params=params)
@@ -367,6 +382,9 @@ def build_module_tvmc(irmod, params, export_path=None, target=targets['avx2'], *
     return rtmod, lib
 
 def get_json_and_ir(irmod, params, opt_level=3, target=targets['avx2']):
+    if not TVM_AVAILABLE:
+        raise ImportError("TVM is required for get_json_and_ir but not available. Please install TVM or use Docker.")
+    
     raw_targets = Target.canon_multi_target_and_host(Target.target_or_current(target))
     with tvm.transform.PassContext(opt_level=opt_level, config={'tir.disable_assert': True}):
         graph_json_str, rtmod, _params = relay.build_module.BuildModule().build(irmod, target=raw_targets, params=params)

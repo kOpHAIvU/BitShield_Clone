@@ -16,6 +16,7 @@ docker version >nul 2>&1
 if errorlevel 1 (
     echo Error: Docker is not running or not installed.
     echo Please install Docker Desktop and start it.
+    pause
     exit /b 1
 )
 
@@ -24,6 +25,7 @@ docker image inspect "%BUILT_IMAGE%:latest" >nul 2>&1
 if errorlevel 1 (
     echo Error: Docker image %BUILT_IMAGE% not found.
     echo Please run docker\setup.bat first to build the image.
+    pause
     exit /b 1
 )
 
@@ -32,29 +34,27 @@ set "CMD=%*"
 if "%CMD%"=="" (
     echo Usage: %0 ^<command^>
     echo Example: %0 python tools\ensure_datasets.py
+    pause
     exit /b 1
 )
 
 echo Running in Docker: %CMD%
 
-REM Run the command in Docker
+REM Convert Windows path separators to Unix path separators for Docker
+set "DOCKER_CMD=%CMD%"
+set "DOCKER_CMD=%DOCKER_CMD:\=/%"
+
+REM Run the command in Docker with simple path handling
 docker run --rm -it ^
-    -v "%IMAGENET_ROOT%:%IMAGENET_ROOT%:ro" ^
-    -v "%PROJECT_DIR%:%PROJECT_DIR%" ^
-    -w "%PROJECT_DIR%" ^
-    -e TVM_LIBRARY_PATH=%TVM_DIR%\build.docker ^
+    -v "%cd%:/workspace" ^
+    -w "/workspace" ^
+    -e TVM_LIBRARY_PATH=/workspace/compilers/tvm-main/build.docker ^
     --ulimit core=0 ^
     --shm-size 1G ^
     "%BUILT_IMAGE%" ^
-    /bin/bash -ic "source \"%PROJECT_DIR%\"/env.sh && ( %CMD% )"
+    /bin/bash -c "%DOCKER_CMD%"
 
 set "ret=%errorlevel%"
 
-echo Fixing potential permissions issues...
-docker run --rm -it ^
-    -v "%PROJECT_DIR%:%PROJECT_DIR%" ^
-    -w "%PROJECT_DIR%" ^
-    "%BUILT_IMAGE%" ^
-    /bin/bash -c "for x in ghidra/{db,analysis} models built results built-aux .cache; do chown -R $(id -u):$(id -g) \"%PROJECT_DIR%/\$x\" 2>/dev/null; done" 2>nul
-
+echo Command completed with exit code: %ret%
 exit /b %ret% 

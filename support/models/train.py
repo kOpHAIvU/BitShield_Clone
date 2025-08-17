@@ -36,8 +36,9 @@ if __name__ == '__main__':
 
     ensure_dir_of(outfile)
 
-    train_loader = dataman.get_benign_loader(args.dataset, args.image_size, 'train', args.batch_size, shuffle=True)
-    val_loader = dataman.get_benign_loader(args.dataset, args.image_size, 'test', args.batch_size, shuffle=True)
+    # Set num_workers=0 to avoid multiprocessing issues in Docker
+    train_loader = dataman.get_benign_loader(args.dataset, args.image_size, 'train', args.batch_size, shuffle=True, num_workers=0)
+    val_loader = dataman.get_benign_loader(args.dataset, args.image_size, 'test', args.batch_size, shuffle=True, num_workers=0)
 
     if args.dataset in {'ImageNet'}:  # Get from torchvision
         model_class = getattr(torchvision.models, args.model)

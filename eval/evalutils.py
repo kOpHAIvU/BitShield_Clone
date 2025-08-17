@@ -10,7 +10,7 @@ import torch.nn.functional as F
 import torchvision as tv
 import time
 import argparse
-from tvm.contrib.graph_executor import GraphModule
+# from tvm.contrib.graph_executor import GraphModule  # Skip TVM
 
 import modman
 import utils
@@ -187,8 +187,9 @@ def check_accuracyv2(runnable_mod, data_loader, topn=1, sus_score=False, sus_sco
     return accuracy, top_labels, np.array(sus_scores)
 
 def check_accuracy(mod, data_loader, nclasses=10, input_name='input0', topn=1):
-    if isinstance(mod, GraphModule):
-        mod = modman.WrappedRtMod(mod, nclasses=nclasses, input_name=input_name)
+    # Skip TVM GraphModule check
+    # if isinstance(mod, GraphModule):
+    #     mod = modman.WrappedRtMod(mod, nclasses=nclasses, input_name=input_name)
     assert getattr(mod, 'run', None), f'{type(mod)} is not runnable'
     # start = time.time()
     acc, _ = check_accuracyv2(mod, data_loader, topn=topn)

@@ -1,101 +1,72 @@
-# BitShield - Windows Setup Guide
+# BitShield - Hướng dẫn Windows
 
-## Overview
+## Tổng quan
 
-This is the research artifact for the paper [BitShield: Defending Against
-Bit-Flip Attacks on DNN Executables](https://www.ndss-symposium.org/ndss-paper/bitshield-defending-against-bit-flip-attacks-on-dnn-executables/)
-in NDSS 2025, adapted for Windows.
+BitShield là một dự án nghiên cứu bảo vệ chống lại các cuộc tấn công bit-flip trên các file thực thi mạng nơ-ron sâu (DNN). Hướng dẫn này dành riêng cho Windows.
 
-## Prerequisites
+## Yêu cầu hệ thống
 
-### Required Software
+### Phần mềm bắt buộc
 
-1. **Python 3.8** - Download from [python.org](https://www.python.org/downloads/)
-   - Make sure to check "Add Python to PATH" during installation
-   - Verify installation: `python --version`
+1. **Python 3.8+** - Tải từ [python.org](https://www.python.org/downloads/)
+   - Đảm bảo tích hợp "Add Python to PATH" khi cài đặt
+   - Kiểm tra: `python --version`
 
-2. **Git** - Download from [git-scm.com](https://git-scm.com/download/win)
-   - Verify installation: `git --version`
+2. **Git** - Tải từ [git-scm.com](https://git-scm.com/download/win)
+   - Kiểm tra: `git --version`
 
-3. **Docker Desktop** - Download from [docker.com](https://www.docker.com/products/docker-desktop/)
-   - Required for building models and running experiments
-   - Make sure Docker Desktop is running before using Docker commands
+3. **Docker Desktop** - Tải từ [docker.com](https://www.docker.com/products/docker-desktop/)
+   - Cần thiết để build models và chạy experiments
+   - Đảm bảo Docker Desktop đang chạy trước khi sử dụng
 
-### Optional Software
+### Yêu cầu phần cứng
 
-4. **ImageNet Dataset** (Optional)
-   - If you have ImageNet dataset, set the environment variable:
-   ```cmd
-   set IMAGENET_ROOT=C:\path\to\your\imagenet\dataset
-   ```
+- **RAM tối thiểu**: 8GB
+- **RAM khuyến nghị**: 16GB+
+- **Dung lượng ổ cứng**: 50GB+ trống
+- **Ổ cứng**: SSD được khuyến nghị
 
-## Getting Started
+## Cài đặt nhanh
 
-### 1. Initial Setup
-
-Run the Windows setup script:
+### Bước 1: Cài đặt ban đầu
 
 ```cmd
 setup.bat
 ```
 
-This script will:
-- Initialize git submodules
-- Create a Python virtual environment
-- Install all required dependencies
-- Create necessary directories
+Script này sẽ:
+- Khởi tạo git submodules
+- Tạo virtual environment Python
+- Cài đặt tất cả dependencies cần thiết
+- Tạo các thư mục cần thiết
 
-### 2. Activate Environment
-
-Before working on the project, always activate the environment:
+### Bước 2: Kích hoạt môi trường
 
 ```cmd
 env.bat
 ```
 
-Or manually:
-```cmd
-venv\Scripts\activate.bat
-```
-
-### 3. Download Datasets
-
-Download required datasets:
+### Bước 3: Tải datasets
 
 ```cmd
 python tools\ensure_datasets.py
 ```
 
-This will download:
-- CIFAR10, CIFAR100, MNIST, FashionMNIST
-- DTD, GTSRB datasets
-- LPIPS weights
-- FID Inception weights
-
-### 4. Docker Setup (Required for Model Building)
-
-Build the Docker image for model compilation:
+### Bước 4: Cài đặt Docker (nếu cần build models)
 
 ```cmd
 docker\setup.bat
 ```
 
-This will:
-- Build a Docker image with all required dependencies
-- Install Ghidra for binary analysis
-- Build TVM and Glow compilers
+## Sử dụng cơ bản
 
-## Usage
-
-### Training Models
-
-Train models using the training script:
+### Huấn luyện mô hình
 
 ```cmd
-REM Train ResNet50 on CIFAR10
+REM Huấn luyện ResNet50 trên CIFAR10
 python support\models\train.py resnet50 CIFAR10
 
-REM Train multiple models
+REM Huấn luyện nhiều mô hình
 for %m in (resnet50 densenet121 googlenet) do (
     for %x in (CIFAR10 MNISTC FashionC) do (
         python support\models\train.py %m %x
@@ -103,131 +74,85 @@ for %m in (resnet50 densenet121 googlenet) do (
 )
 ```
 
-### Building Models
-
-After training, build the models:
+### Build mô hình
 
 ```cmd
-REM Build all models defined in cfg.py
+REM Build tất cả mô hình
 docker\run-in-docker.bat python buildmodels.py
-
-REM Or use DVC to reproduce the build pipeline
-dvc repro
 ```
 
-### Running Experiments
-
-#### Bit-Flip Sweep
-
-Find vulnerable bits in models:
+### Chạy thí nghiệm
 
 ```cmd
-REM Sweep for vulnerable bits in ResNet50 on CIFAR10
+REM Tìm kiếm bit dễ bị tấn công
 docker\run-in-docker.bat python flipsweep.py -m resnet50 -d CIFAR10
-```
 
-#### Attack Simulation
-
-Run attack simulations:
-
-```cmd
-REM Run all attack simulations
+REM Mô phỏng tấn công
 tools\runattacksim.bat
-
-REM Run specific model/dataset combination
-tools\runattacksim.bat -m resnet50 -d CIFAR10
 ```
 
-### Using DVC
+## Cấu trúc thư mục
 
-This project uses DVC for data version control:
+```
+BitShield_Clone/
+├── datasets/          # Datasets đã tải về
+├── models/            # Trọng số mô hình đã huấn luyện
+├── built/             # Binary files đã compile
+├── results/           # Kết quả thí nghiệm
+├── ghidra/            # Files phân tích binary
+├── compilers/         # TVM, Glow, NNFusion compilers
+├── support/models/    # Định nghĩa mô hình
+├── tools/             # Công cụ tiện ích
+└── docker/            # Docker configuration
+```
+
+## Xử lý sự cố
+
+### Lỗi thường gặp
+
+1. **Python không tìm thấy**
+   - Đảm bảo Python 3.8+ đã cài đặt và có trong PATH
+   - Thử: `python --version`
+
+2. **Docker không chạy**
+   - Khởi động Docker Desktop
+   - Kiểm tra: `docker version`
+
+3. **Lỗi quyền truy cập**
+   - Chạy Command Prompt với quyền Administrator
+
+4. **Lỗi virtual environment**
+   - Xóa thư mục `venv/` và chạy lại `setup.bat`
+
+### Mẹo tăng hiệu suất
+
+1. **Sử dụng ổ SSD** để tăng hiệu suất I/O
+2. **Cấp phát nhiều RAM hơn** cho Docker Desktop (8GB+ khuyến nghị)
+3. **Sử dụng WSL2 backend** cho Docker
+
+## Sử dụng DVC
 
 ```cmd
-REM Pull latest data
+REM Pull dữ liệu mới nhất
 dvc pull
 
 REM Reproduce experiments
 dvc repro
 
-REM Check status
+REM Kiểm tra trạng thái
 dvc status
 ```
 
-## File Structure
+## Hỗ trợ
 
-### Windows-Specific Files
+Nếu gặp vấn đề:
+1. Kiểm tra README này trước
+2. Đảm bảo tất cả prerequisites đã cài đặt
+3. Kiểm tra Docker Desktop đang chạy
+4. Đảm bảo đủ dung lượng ổ cứng và RAM
 
-- `setup.bat` - Initial setup script
-- `env.bat` - Environment activation script
-- `docker\setup.bat` - Docker image setup
-- `docker\run-in-docker.bat` - Run commands in Docker
-- `docker\config.bat` - Docker configuration
-- `tools\runattacksim.bat` - Attack simulation runner
+## Tài liệu tham khảo
 
-### Key Directories
-
-- `datasets/` - Downloaded datasets
-- `models/` - Trained model weights
-- `built/` - Compiled model binaries
-- `results/` - Experiment results
-- `ghidra/` - Binary analysis files
-- `compilers/` - TVM, Glow, NNFusion compilers
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Python not found**
-   - Make sure Python 3.8 is installed and in PATH
-   - Try: `python --version`
-
-2. **Docker not running**
-   - Start Docker Desktop
-   - Check: `docker version`
-
-3. **Permission errors**
-   - Run Command Prompt as Administrator
-   - Check file permissions
-
-4. **Git submodule issues**
-   - Run: `git submodule update --init --recursive`
-
-5. **Virtual environment issues**
-   - Delete `venv/` directory and run `setup.bat` again
-
-### Performance Tips
-
-1. **Use SSD storage** for better I/O performance
-2. **Allocate more memory** to Docker Desktop (8GB+ recommended)
-3. **Use WSL2 backend** for Docker (better performance)
-
-### Memory Requirements
-
-- **Minimum**: 8GB RAM
-- **Recommended**: 16GB+ RAM
-- **Storage**: 50GB+ free space
-
-## Development
-
-### Adding New Models
-
-1. Add model definition in `support/models/`
-2. Update `cfg.py` with new model configurations
-3. Train the model using `support/models/train.py`
-4. Build using `buildmodels.py`
-
-### Adding New Datasets
-
-1. Add dataset to `tools/ensure_datasets.py`
-2. Update `cfg.py` with dataset configurations
-3. Update `utils.py` if needed for dataset-specific properties
-
-## Support
-
-For issues specific to the Windows setup:
-1. Check this README first
-2. Verify all prerequisites are installed
-3. Check Docker Desktop is running
-4. Ensure sufficient disk space and memory
-
-For general project issues, refer to the main README.md file. 
+- [Paper gốc](https://www.ndss-symposium.org/ndss-paper/bitshield-defending-against-bit-flip-attacks-on-dnn-executables/)
+- [DVC Documentation](https://dvc.org/)
+- [Docker Documentation](https://docs.docker.com/) 

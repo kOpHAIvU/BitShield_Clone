@@ -11,65 +11,74 @@ set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 REM Source config
 call "%SCRIPT_DIR%\config.bat"
 
-echo Building Docker image for BitShield project...
+echo ========================================
+echo Building Docker image for BitShield
+echo ========================================
+echo.
 
 REM Check if Docker is running
 docker version >nul 2>&1
 if errorlevel 1 (
     echo Error: Docker is not running or not installed.
     echo Please install Docker Desktop and start it.
+    pause
     exit /b 1
 )
+
+echo Docker is running. Checking image...
 
 REM Check if the image already exists
 docker image inspect "%BUILT_IMAGE%:latest" >nul 2>&1
 if not errorlevel 1 (
     echo Docker image %BUILT_IMAGE% already exists.
     echo Skipping build...
-    goto :build_venv
+    goto :build_compilers
 )
 
 echo Building Docker image...
 docker build -t "%BUILT_IMAGE%" -f "%SCRIPT_DIR%\Dockerfile" .
-
-:build_venv
-REM Initialize venv in Docker if it doesn't exist
-if not exist "%PROJECT_DIR%\venv.docker" (
-    echo Initializing virtual environment in Docker...
-    docker run --rm -i ^
-        -v "%PROJECT_DIR%:%PROJECT_DIR%" ^
-        -w "%PROJECT_DIR%" ^
-        "%BUILT_IMAGE%" ^
-        /bin/zsh -ic "source env.sh"
+if errorlevel 1 (
+    echo Error: Failed to build Docker image.
+    pause
+    exit /b 1
 )
 
-REM Install Ghidra if not already installed
-if not exist "%PROJECT_DIR%\ghidra\ghidra-app" (
-    echo Installing Ghidra...
-    call "%SCRIPT_DIR%\run-in-docker.bat" ghidra\install-ghidra.sh
-)
+:build_compilers
+echo.
+echo Building compilers...
 
 REM Build TVM for Docker container
-if not exist "%TVM_DIR%\build.docker" (
-    echo Building TVM for Docker container...
+if not exist "%PROJECT_DIR%\compilers\tvm-main\build.docker" (
+    echo Building TVM...
     docker run --rm -i ^
-        -v "%PROJECT_DIR%:%PROJECT_DIR%" ^
+        -v "%PROJECT_DIR%:%PROJECT_DIR_DOCKER%" ^
         -w "%TVM_DIR%" ^
         "%BUILT_IMAGE%" ^
-        /bin/bash -c "set -e && mkdir -p build.docker && cd build.docker && cp \"%RESOURCES_DIR%\tvm-main.config.cmake\" ./config.cmake && cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DCMAKE_BUILD_TYPE=Release .. -G Ninja && ninja"
+        /bin/bash -c "mkdir -p build.docker && cd build.docker && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j4"
+    if errorlevel 1 (
+        echo Warning: TVM build failed. Some functionality may not work.
+    )
 )
 
 REM Build Glow for Docker container
-if not exist "%GLOW_DIR%\build.docker" (
-    echo Building Glow for Docker container...
-    REM Fix folly version issue
-    git -C "%GLOW_DIR%\thirdparty\folly" checkout v2020.10.05.00
+if not exist "%PROJECT_DIR%\compilers\glow-main\build.docker" (
+    echo Building Glow...
     docker run --rm -i ^
-        -v "%PROJECT_DIR%:%PROJECT_DIR%" ^
+        -v "%PROJECT_DIR%:%PROJECT_DIR_DOCKER%" ^
         -w "%GLOW_DIR%" ^
         "%BUILT_IMAGE%" ^
-        /bin/bash -c "set -e && mkdir -p build.docker && cd build.docker && cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DGLOW_BUILD_TESTS=0 -DCMAKE_BUILD_TYPE=Release .. -G Ninja && ninja"
+        /bin/bash -c "mkdir -p build.docker && cd build.docker && cmake -DGLOW_BUILD_TESTS=0 -DCMAKE_BUILD_TYPE=Release .. && make -j4"
+    if errorlevel 1 (
+        echo Warning: Glow build failed. Some functionality may not work.
+    )
 )
 
+echo.
+echo ========================================
 echo Docker setup completed successfully!
-echo Use %SCRIPT_DIR%\run-in-docker.bat to run commands inside the container. 
+echo ========================================
+echo.
+echo Use docker\run-in-docker.bat to run commands inside the container.
+echo Example: docker\run-in-docker.bat python buildmodels.py
+echo.
+pause 

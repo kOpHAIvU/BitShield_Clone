@@ -23,12 +23,20 @@ class LeNet1(nn.Module):
 
         self.model = nn.Sequential(*model_list)
         # params: (12*4*4 + 1) * 10 = 1930
+        # Handle both 28x28 and 32x32 inputs
         self.fc = nn.Linear(12*4*4, num_classes)
         # Total number of parameters = 104 + 1212 + 1930 = 3246
 
     def forward(self, x):
         out = self.model(x)
         out = out.view(x.size(0), -1)
+        # Handle different input sizes by using adaptive pooling
+        if out.size(1) != 12*4*4:
+            # If input is 32x32, output will be 12*5*5 = 300
+            # If input is 28x28, output will be 12*4*4 = 192
+            out = out.view(x.size(0), 12, -1)
+            out = F.adaptive_avg_pool1d(out, 16)  # Reshape to 12*4*4 = 192
+            out = out.view(x.size(0), -1)
         out = self.fc(out)
         return out
 
