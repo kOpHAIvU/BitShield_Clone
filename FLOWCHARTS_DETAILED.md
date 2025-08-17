@@ -1,4 +1,4 @@
-# BitShield_Clone - Flow Charts Chi Tiết và Đẹp
+# BitShield_Clone - Flow Charts
 
 ## Tổng Quan Dự Án
 
@@ -276,5 +276,3 @@ graph TD
 ### 5. **Workflow Modes**
 - **Simple Mode**: Chỉ training và testing
 - **Full Mode**: Toàn bộ pipeline từ training đến attack simulation
-
-Các flow chart này cung cấp cái nhìn tổng quan chi tiết và đẹp mắt về cách dự án BitShield hoạt động, với thông tin chi tiết về từng bước trong quy trình.
