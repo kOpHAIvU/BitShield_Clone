@@ -64,6 +64,8 @@ wandb/
 /debug
 /models
 /datasets
+dataset
+save
 /built-aux
 
 !.vim
