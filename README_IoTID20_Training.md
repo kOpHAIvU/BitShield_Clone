@@ -68,10 +68,13 @@ python support/models/train.py <model_name> IoTID20 [options]
 ```bash
 python support/models/train.py <model_name> IoTID20 \
     --epochs 10 \           # Số epochs (mặc định: 10)
-    --batch-size 64 \       # Batch size (mặc định: 100)
+    --batch-size 256 \      # Batch size (mặc định: 256)
     --device cuda \         # Thiết bị: cpu/cuda (mặc định: cpu)
     --output-root ./models \ # Thư mục lưu model (mặc định: cfg.models_dir)
-    --skip-existing         # Bỏ qua nếu file đã tồn tại
+    --skip-existing \       # Bỏ qua nếu file đã tồn tại
+    --use-class-weights \   # Sử dụng class weights cho imbalanced data
+    --learning-rate 0.001 \ # Learning rate (mặc định: 0.001)
+    --weight-decay 0.0001   # Weight decay cho regularization (mặc định: 0.0001)
 ```
 
 ## Ví dụ sử dụng
@@ -89,14 +92,32 @@ python support/models/train.py PureCNN IoTID20 --epochs 5 --batch-size 32
 python support/models/train.py EfficientCNN IoTID20 --epochs 10 --batch-size 64 --device cuda
 ```
 
-### 2. Training nhanh để test
+### 2. Training với cải tiến (Khuyến nghị)
+
+```bash
+# Training với class weights để xử lý imbalanced data
+python support/models/train.py CustomModel2 IoTID20 --epochs 15 --use-class-weights
+
+# Training với tất cả cải tiến
+python support/models/train.py ResNetSEBlockIoT IoTID20 \
+    --epochs 20 \
+    --use-class-weights \
+    --learning-rate 0.0005 \
+    --weight-decay 0.0001 \
+    --device cuda
+```
+
+### 3. Training nhanh để test
 
 ```bash
 # Test nhanh với 1 epoch
 python support/models/train.py SimpleCNNIoT IoTID20 --epochs 1 --batch-size 32
+
+# Test với class weights
+python support/models/train.py CustomModel2 IoTID20 --epochs 1 --use-class-weights
 ```
 
-### 3. Training với tùy chọn nâng cao
+### 4. Training với tùy chọn nâng cao
 
 ```bash
 # Train với batch size lớn và lưu vào thư mục tùy chỉnh
@@ -104,7 +125,8 @@ python support/models/train.py ResNetSEBlockIoT IoTID20 \
     --epochs 20 \
     --batch-size 128 \
     --device cuda \
-    --output-root ./my_models
+    --output-root ./my_models \
+    --use-class-weights
 ```
 
 ## Chạy demo
@@ -112,7 +134,44 @@ python support/models/train.py ResNetSEBlockIoT IoTID20 \
 ```bash
 # Chạy script demo để xem các ví dụ
 python support/demo_iotid20_training.py
+
+# Chạy script demo cải tiến
+python support/demo_improved_training.py
 ```
+
+## Cải tiến mới
+
+### 🚀 **Các tính năng cải tiến:**
+
+1. **Class Weights** (`--use-class-weights`):
+   - Tự động tính toán trọng số cho các lớp
+   - Cải thiện phát hiện các lớp thiểu số
+   - Giảm bias về lớp đa số
+
+2. **Learning Rate Scheduling**:
+   - Tự động giảm learning rate khi không cải thiện
+   - Tránh overfitting
+   - Tối ưu hóa convergence
+
+3. **Early Stopping**:
+   - Dừng sớm khi không cải thiện
+   - Tránh overfitting
+   - Tiết kiệm thời gian training
+
+4. **Weight Decay** (`--weight-decay`):
+   - Regularization để tránh overfitting
+   - Cải thiện generalization
+
+5. **Best Model Saving**:
+   - Tự động lưu model tốt nhất
+   - Sử dụng model tốt nhất cho evaluation
+
+### 📊 **Kết quả mong đợi:**
+
+- **TPR cao hơn**: Phát hiện tốt hơn các loại tấn công
+- **Confusion Matrix cân bằng**: Ít nhầm lẫn giữa các lớp
+- **MCC cao hơn**: Đánh giá tổng thể tốt hơn
+- **Training ổn định**: Ít overfitting
 
 ## Kết quả
 

@@ -12,6 +12,7 @@ import cfg
 from support import models
 import numpy as np
 from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.utils.class_weight import compute_class_weight
 
 # Import IoTID20 data preprocessing
 try:
@@ -35,6 +36,25 @@ def ensure_dir_of(filepath):  # No need to import utils
     dirpath = os.path.dirname(filepath)
     if dirpath and not os.path.exists(dirpath):
         os.makedirs(dirpath, exist_ok=True)
+
+def calculate_class_weights(y_train, num_classes):
+    """
+    Calculate class weights to handle class imbalance
+    
+    Args:
+        y_train: Training labels
+        num_classes: Number of classes
+        
+    Returns:
+        torch.Tensor: Class weights for loss function
+    """
+    # Convert to numpy if needed
+    if hasattr(y_train, 'cpu'):
+        y_train = y_train.cpu().numpy()
+    
+    # Calculate balanced class weights
+    class_weights = compute_class_weight('balanced', classes=np.arange(num_classes), y=y_train)
+    return torch.FloatTensor(class_weights)
 
 def calculate_metrics(y_true, y_pred, num_classes):
     """
@@ -120,6 +140,9 @@ if __name__ == '__main__':
     parser.add_argument("--device", '-d', type=str, default='cpu')
     parser.add_argument('--output-root', type=str, default=cfg.models_dir)
     parser.add_argument('--skip-existing', action='store_true')
+    parser.add_argument('--use-class-weights', action='store_true', help='Use class weights to handle imbalance')
+    parser.add_argument('--learning-rate', type=float, default=1e-3, help='Learning rate')
+    parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for regularization')
     args = parser.parse_args()
 
     outfile = os.path.join(args.output_root, f'{args.dataset}/{args.model}/{args.model}.pt')
@@ -176,8 +199,41 @@ if __name__ == '__main__':
         torch_model = model_class(pretrained=False)
     torch_model.to(args.device)
 
-    optimizer = torch.optim.Adam(torch_model.parameters(), lr=1e-3)
-    criterion = torch.nn.CrossEntropyLoss()
+    # Calculate class weights if requested
+    class_weights = None
+    if args.use_class_weights and args.dataset == 'IoTID20':
+        print("Calculating class weights to handle imbalance...")
+        # Get training labels for class weight calculation
+        train_labels = []
+        for _, y in train_loader:
+            train_labels.extend(y.cpu().numpy())
+        class_weights = calculate_class_weights(train_labels, num_classes)
+        class_weights = class_weights.to(args.device)
+        print(f"Class weights: {class_weights.cpu().numpy()}")
+    
+    # Setup loss function with class weights
+    if class_weights is not None:
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+        print("Using weighted CrossEntropyLoss")
+    else:
+        criterion = torch.nn.CrossEntropyLoss()
+    
+    # Setup optimizer with improved settings
+    optimizer = torch.optim.Adam(torch_model.parameters(), 
+                                lr=args.learning_rate, 
+                                weight_decay=args.weight_decay)
+    
+    # Learning rate scheduler
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 
+                                                         mode='max', 
+                                                         factor=0.5, 
+                                                         patience=3, 
+                                                         verbose=True)
+    
+    # Early stopping
+    best_val_acc = 0.0
+    patience_counter = 0
+    early_stop_patience = 5
 
     for epoch in tqdm(range(args.epochs)):
         # Training phase
@@ -225,12 +281,39 @@ if __name__ == '__main__':
         # Calculate detailed validation metrics
         val_metrics = calculate_metrics(val_targets, val_predictions, num_classes)
         
+        # Update learning rate
+        scheduler.step(val_metrics["Accuracy"])
+        
+        # Early stopping check
+        current_val_acc = val_metrics["Accuracy"]
+        if current_val_acc > best_val_acc:
+            best_val_acc = current_val_acc
+            patience_counter = 0
+            # Save best model
+            torch.save(torch_model.state_dict(), outfile.replace('.pt', '_best.pt'))
+        else:
+            patience_counter += 1
+        
         # Print metrics
+        current_lr = optimizer.param_groups[0]['lr']
         print(f'Epoch {epoch+1:3d}/{args.epochs}: '
               f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:6.2f}% | '
               f'Val Loss: {val_loss:.4f}, Val Acc: {val_metrics["Accuracy"]*100:6.2f}% | '
-              f'MCC: {val_metrics["MCC"]:6.3f}, TPR: {val_metrics["TPR"]:6.3f}, F1: {val_metrics["F1_Score"]:6.3f}')
+              f'MCC: {val_metrics["MCC"]:6.3f}, TPR: {val_metrics["TPR"]:6.3f}, F1: {val_metrics["F1_Score"]:6.3f} | '
+              f'LR: {current_lr:.2e} | Best: {best_val_acc*100:.2f}%')
+        
+        # Early stopping
+        if patience_counter >= early_stop_patience:
+            print(f"\nEarly stopping triggered after {epoch+1} epochs (patience={early_stop_patience})")
+            print(f"Best validation accuracy: {best_val_acc*100:.2f}%")
+            break
 
+    # Load best model for final evaluation
+    best_model_path = outfile.replace('.pt', '_best.pt')
+    if os.path.exists(best_model_path):
+        print(f"Loading best model from {best_model_path}")
+        torch_model.load_state_dict(torch.load(best_model_path))
+    
     # Final evaluation
     print("\n" + "="*80)
     print("FINAL EVALUATION RESULTS")
