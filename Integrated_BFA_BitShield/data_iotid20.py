@@ -55,6 +55,7 @@ def _standardize_and_split_source_csv(data_root, out_train, out_test, source_csv
         if not candidates:
             common_paths = [
                 r"D:\Sukem\NCKH\Dataset\IoT_Network_Intrusion_Dataset\IoT_Network_Intrusion_Dataset.csv",
+                r"../../dataset/IoT_Network_Intrusion_Dataset.csv",
                 r"D:\Datasets\IoT_Network_Intrusion_Dataset.csv",
                 r"D:\Dataset\IoT_Network_Intrusion_Dataset.csv",
                 os.path.join(os.path.dirname(data_root), 'IoT_Network_Intrusion_Dataset.csv'),
