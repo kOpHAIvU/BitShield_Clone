@@ -10,6 +10,8 @@ from tqdm import tqdm
 import argparse
 import cfg
 from support import models
+import numpy as np
+from sklearn.metrics import confusion_matrix, classification_report
 
 # Import IoTID20 data preprocessing
 try:
@@ -33,6 +35,80 @@ def ensure_dir_of(filepath):  # No need to import utils
     dirpath = os.path.dirname(filepath)
     if dirpath and not os.path.exists(dirpath):
         os.makedirs(dirpath, exist_ok=True)
+
+def calculate_metrics(y_true, y_pred, num_classes):
+    """
+    Calculate comprehensive evaluation metrics
+    
+    Args:
+        y_true: Ground truth labels
+        y_pred: Predicted labels
+        num_classes: Number of classes
+        
+    Returns:
+        dict: Dictionary containing all metrics
+    """
+    # Convert to numpy arrays
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    
+    # Confusion matrix
+    cm = confusion_matrix(y_true, y_pred, labels=range(num_classes))
+    
+    # Calculate metrics for each class
+    metrics = {}
+    
+    # Overall accuracy
+    accuracy = np.sum(y_true == y_pred) / len(y_true)
+    metrics['Accuracy'] = accuracy
+    
+    # Per-class metrics
+    tpr_list = []
+    f1_list = []
+    
+    for i in range(num_classes):
+        # True Positives, False Positives, False Negatives, True Negatives
+        tp = cm[i, i]
+        fp = np.sum(cm[:, i]) - tp
+        fn = np.sum(cm[i, :]) - tp
+        tn = np.sum(cm) - tp - fp - fn
+        
+        # True Positive Rate (Sensitivity/Recall)
+        tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
+        tpr_list.append(tpr)
+        
+        # Precision
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        
+        # F1 Score
+        f1 = 2 * (precision * tpr) / (precision + tpr) if (precision + tpr) > 0 else 0
+        f1_list.append(f1)
+    
+    # Average TPR and F1
+    metrics['TPR'] = np.mean(tpr_list)
+    metrics['F1_Score'] = np.mean(f1_list)
+    
+    # Matthews Correlation Coefficient (MCC)
+    # For multi-class: MCC = (c*N - sum(tk*pk)) / sqrt((N^2 - sum(pk^2)) * (N^2 - sum(tk^2)))
+    # where c = sum of diagonal elements, N = total samples, tk = true positives for class k, pk = predicted positives for class k
+    
+    N = np.sum(cm)
+    c = np.trace(cm)
+    
+    # Sum of squares of true positives for each class
+    tk_squared = np.sum(np.sum(cm, axis=1) ** 2)
+    
+    # Sum of squares of predicted positives for each class  
+    pk_squared = np.sum(np.sum(cm, axis=0) ** 2)
+    
+    # Calculate MCC
+    mcc_numerator = c * N - np.sum(np.sum(cm, axis=1) * np.sum(cm, axis=0))
+    mcc_denominator = np.sqrt((N**2 - tk_squared) * (N**2 - pk_squared))
+    
+    mcc = mcc_numerator / mcc_denominator if mcc_denominator > 0 else 0
+    metrics['MCC'] = mcc
+    
+    return metrics
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -104,24 +180,106 @@ if __name__ == '__main__':
     criterion = torch.nn.CrossEntropyLoss()
 
     for epoch in tqdm(range(args.epochs)):
+        # Training phase
         torch_model.train(True)
-        for x, y in tqdm(train_loader):
+        train_loss = 0.0
+        train_correct = 0
+        train_total = 0
+        
+        for x, y in tqdm(train_loader, desc=f'Epoch {epoch+1}/{args.epochs}'):
             x, y = x.to(args.device), y.to(args.device)
             optimizer.zero_grad()
             y_pred = torch_model(x)
             loss = criterion(y_pred, y)
             loss.backward()
             optimizer.step()
+            
+            # Calculate training metrics
+            train_loss += loss.item() * y.size(0)
+            pred = y_pred.argmax(dim=1)
+            train_correct += (pred == y).sum().item()
+            train_total += y.size(0)
 
+        # Validation phase
         torch_model.train(False)
+        val_loss = 0.0
+        val_predictions = []
+        val_targets = []
+        
         with torch.no_grad():
-            val_acc = 0
             for x, y in val_loader:
                 x, y = x.to(args.device), y.to(args.device)
                 y_pred = torch_model(x)
-                val_acc += (y_pred.argmax(dim=1) == y).sum().item()
-            val_acc /= len(val_loader.dataset)
-            print(f'Epoch {epoch}: {val_acc=}')
+                loss = criterion(y_pred, y)
+                val_loss += loss.item() * y.size(0)
+                
+                pred = y_pred.argmax(dim=1)
+                val_predictions.extend(pred.cpu().numpy())
+                val_targets.extend(y.cpu().numpy())
+        
+        # Calculate comprehensive metrics
+        train_loss = train_loss / train_total
+        train_acc = train_correct / train_total * 100
+        val_loss = val_loss / len(val_loader.dataset)
+        
+        # Calculate detailed validation metrics
+        val_metrics = calculate_metrics(val_targets, val_predictions, num_classes)
+        
+        # Print metrics
+        print(f'Epoch {epoch+1:3d}/{args.epochs}: '
+              f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:6.2f}% | '
+              f'Val Loss: {val_loss:.4f}, Val Acc: {val_metrics["Accuracy"]*100:6.2f}% | '
+              f'MCC: {val_metrics["MCC"]:6.3f}, TPR: {val_metrics["TPR"]:6.3f}, F1: {val_metrics["F1_Score"]:6.3f}')
 
+    # Final evaluation
+    print("\n" + "="*80)
+    print("FINAL EVALUATION RESULTS")
+    print("="*80)
+    
+    # Get final predictions on validation set
+    torch_model.eval()
+    final_predictions = []
+    final_targets = []
+    
+    with torch.no_grad():
+        for x, y in val_loader:
+            x, y = x.to(args.device), y.to(args.device)
+            y_pred = torch_model(x)
+            pred = y_pred.argmax(dim=1)
+            final_predictions.extend(pred.cpu().numpy())
+            final_targets.extend(y.cpu().numpy())
+    
+    # Calculate final metrics
+    final_metrics = calculate_metrics(final_targets, final_predictions, num_classes)
+    
+    print(f"Model: {args.model}")
+    print(f"Dataset: {args.dataset}")
+    print(f"Epochs: {args.epochs}")
+    print(f"Batch Size: {args.batch_size}")
+    print(f"Device: {args.device}")
+    print("-"*80)
+    print("PERFORMANCE METRICS:")
+    print(f"  Accuracy:     {final_metrics['Accuracy']*100:8.2f}%")
+    print(f"  MCC:          {final_metrics['MCC']:8.3f}")
+    print(f"  TPR (Recall): {final_metrics['TPR']:8.3f}")
+    print(f"  F1 Score:     {final_metrics['F1_Score']:8.3f}")
+    print("-"*80)
+    
+    # Confusion Matrix
+    cm = confusion_matrix(final_targets, final_predictions, labels=range(num_classes))
+    print("CONFUSION MATRIX:")
+    print("Predicted ->")
+    print("Actual ↓")
+    print("     ", end="")
+    for i in range(num_classes):
+        print(f"{i:8d}", end="")
+    print()
+    for i in range(num_classes):
+        print(f"{i:3d}  ", end="")
+        for j in range(num_classes):
+            print(f"{cm[i,j]:8d}", end="")
+        print()
+    print("="*80)
+    
     torch.save(torch_model.state_dict(), outfile)
-    print(f'Parameters saved to: {outfile}')
+    print(f'Model parameters saved to: {outfile}')
