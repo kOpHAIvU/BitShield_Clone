@@ -10,7 +10,7 @@ from tqdm import tqdm
 import argparse
 import cfg
 from support import models
-import dataman
+# import dataman  # Commented out to avoid dependency issues
 import numpy as np
 import json
 from support import torchdig
@@ -29,11 +29,18 @@ def load_model(model_name, dataset_name, device='cpu'):
     
     if dataset_name in {'ImageNet'}:
         model_class = getattr(torchvision.models, model_name)
+        torch_model = model_class(pretrained=False)
     else:
         model_class = getattr(models, model_name)
+        # For IoTID20 models, we need to determine input_size and num_classes
+        if dataset_name == 'IoTID20':
+            from support.dataman_iotid20 import preprocess_iotid20_data
+            _, _, input_size, num_classes = preprocess_iotid20_data('support/dataset')
+            torch_model = model_class(input_size=input_size, output_size=num_classes)
+        else:
+            torch_model = model_class(pretrained=False)
     
-    torch_model = model_class(pretrained=False)
-    torch_model.load_state_dict(torch.load(model_file, map_location=device))
+    torch_model.load_state_dict(torch.load(model_file, map_location='cpu'))
     torch_model.to(device)
     torch_model.eval()
     return torch_model
@@ -53,8 +60,13 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu'):
     protected_model.eval()
     
     # Load test data
-    test_loader = dataman.get_benign_loader(dataset_name, 32, 'test', 100, shuffle=False, num_workers=0)
-    train_loader = dataman.get_benign_loader(dataset_name, 32, 'train', 100, shuffle=False, num_workers=0)
+    if dataset_name == 'IoTID20':
+        from support.dataman_iotid20 import get_benign_loader_iotid20
+        test_loader = get_benign_loader_iotid20('IoTID20', 32, 'test', batch_size=100)
+        train_loader = get_benign_loader_iotid20('IoTID20', 32, 'train', batch_size=100)
+    else:
+        print(f"Dataset {dataset_name} not supported in this version")
+        return
     
     # Get original accuracy
     correct = 0
@@ -303,8 +315,13 @@ def attack_with_combined_protection(model_name, dataset_name, device='cpu'):
     protected_model.eval()
     
     # Load test data
-    test_loader = dataman.get_benign_loader(dataset_name, 32, 'test', 100, shuffle=False, num_workers=0)
-    train_loader = dataman.get_benign_loader(dataset_name, 32, 'train', 100, shuffle=False, num_workers=0)
+    if dataset_name == 'IoTID20':
+        from support.dataman_iotid20 import get_benign_loader_iotid20
+        test_loader = get_benign_loader_iotid20('IoTID20', 32, 'test', batch_size=100)
+        train_loader = get_benign_loader_iotid20('IoTID20', 32, 'train', batch_size=100)
+    else:
+        print(f"Dataset {dataset_name} not supported in this version")
+        return
     
     # Get original accuracy
     correct = 0
