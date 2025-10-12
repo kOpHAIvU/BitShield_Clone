@@ -198,7 +198,12 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu'):
         return
     
     # Load test data
-    test_loader = dataman.get_benign_loader(dataset_name, 32, 'test', 100, shuffle=False, num_workers=0)
+    if dataset_name == 'IoTID20':
+        from support.dataman_iotid20 import get_benign_loader_iotid20
+        test_loader = get_benign_loader_iotid20('IoTID20', 32, 'test', batch_size=100)
+    else:
+        print(f"Dataset {dataset_name} not supported in this version")
+        return
     
     # Get original accuracy
     correct = 0
