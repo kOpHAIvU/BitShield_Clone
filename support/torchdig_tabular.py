@@ -40,14 +40,21 @@ class TabularDIGProtectedModule(nn.Module):
         3. Entropy-based detection
         4. Statistical outlier detection
         """
+        # Ensure input requires grad
+        if not x.requires_grad:
+            x.requires_grad_(True)
+            
         logits = self.model(x)
         nclasses = logits.shape[1]
         self.model.zero_grad()
         
         # Method 1: Original gradient-based detection
-        entropy = -1/nclasses * torch.sum(torch.log_softmax(logits, dim=1), dim=1)
-        gradient = grad(entropy.sum(), self.model_fc.weight, create_graph=True)[0]
-        gradient_norm = torch.abs(gradient).sum()
+        try:
+            entropy = -1/nclasses * torch.sum(torch.log_softmax(logits, dim=1), dim=1)
+            gradient = grad(entropy.sum(), self.model_fc.weight, create_graph=True)[0]
+            gradient_norm = torch.abs(gradient).sum()
+        except:
+            gradient_norm = torch.tensor(0.0)
         
         # Method 2: Feature-wise anomaly detection
         feature_anomaly = self._calc_feature_anomaly(x)
