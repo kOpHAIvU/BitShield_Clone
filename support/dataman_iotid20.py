@@ -175,7 +175,7 @@ def get_benign_loader_iotid20(dataset_name, image_size, split, batch_size, shuff
         raise ValueError(f"Unsupported dataset: {dataset_name}. Use 'IoTID20' for IoT intrusion detection.")
     
     # Preprocess data if needed
-    data_root = 'support/dataset'
+    data_root = 'support/dataset/IoTID20'
     train_csv, test_csv, n_features, n_classes = preprocess_iotid20_data(data_root)
     
     # Create loaders
