@@ -1,4 +1,4 @@
-# BitShield_Clone — Tài liệu dự án (Full README)
+# BitShield_Clone — Document
 
 Tài liệu này tổng hợp đầy đủ cách cài đặt, chạy code, luồng hoạt động, cách huấn luyện, mô phỏng tấn công và cơ chế phòng thủ (DIG/CIG) của dự án BitShield_Clone. Các sơ đồ (flow charts) chi tiết nằm ở phần cuối giúp nắm nhanh pipeline tổng thể.
 
