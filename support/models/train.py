@@ -227,8 +227,7 @@ if __name__ == '__main__':
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 
                                                          mode='max', 
                                                          factor=0.5, 
-                                                         patience=3, 
-                                                         verbose=True)
+                                                         patience=3)
     
     # Early stopping
     best_val_acc = 0.0

@@ -23,8 +23,8 @@ class EfficientCNN(nn.Module):
         super().__init__()
 
         # Depthwise separable convolution blocks
-        self.conv1 = nn.Conv1d(input_size, input_size, kernel_size=3, stride=1, padding=1, groups=input_size)
-        self.pw_conv1 = nn.Conv1d(input_size, 64, kernel_size=1)
+        self.conv1 = nn.Conv1d(1, 1, kernel_size=3, stride=1, padding=1, groups=1)
+        self.pw_conv1 = nn.Conv1d(1, 64, kernel_size=1)
         self.bn1 = nn.BatchNorm1d(64)
         self.pool1 = nn.MaxPool1d(kernel_size=2, stride=2)
 
@@ -59,12 +59,20 @@ class EfficientCNN(nn.Module):
 
     def forward(self, x):
         """Forward pass through the network"""
-        # Handle input shape
+        # Handle input shape: expect [B, features] or [B, 1, features]
         if x.dim() == 2:
-            x = x.unsqueeze(-1)
-
-        if x.size(-1) == 1:
-            x = x.transpose(1, 2)
+            # Input is [B, features], add channel dimension
+            x = x.unsqueeze(1)  # [B, features] -> [B, 1, features]
+        elif x.dim() == 3 and x.size(1) == 1:
+            # Input is already [B, 1, features], keep as is
+            pass
+        else:
+            # Unexpected shape, try to handle
+            if x.dim() == 3 and x.size(-1) == 1:
+                # Input is [B, features, 1], transpose to [B, 1, features]
+                x = x.transpose(1, 2)  # [B, features, 1] -> [B, 1, features]
+            else:
+                raise ValueError(f"Unexpected input shape: {x.shape}")
 
         # Depthwise separable blocks
         x = F.relu(self.bn1(self.pw_conv1(self.conv1(x))))

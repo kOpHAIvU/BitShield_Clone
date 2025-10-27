@@ -99,12 +99,8 @@ python support/models/train.py EfficientCNN IoTID20 --epochs 10 --batch-size 64 
 python support/models/train.py CustomModel2 IoTID20 --epochs 15 --use-class-weights
 
 # Training với tất cả cải tiến
-python support/models/train.py ResNetSEBlockIoT IoTID20 \
-    --epochs 20 \
-    --use-class-weights \
-    --learning-rate 0.0005 \
-    --weight-decay 0.0001 \
-    --device cuda
+python support/models/train.py ResNetSEBlockIoT IoTID20 --epochs 20 \
+    --use-class-weights --learning-rate 0.0005 --weight-decay 0.0001 --device cuda
 ```
 
 ### 3. Training nhanh để test

@@ -2,7 +2,10 @@
 
 import sys
 import os
-sys.path.append(f'{os.path.dirname(os.path.realpath(__file__))}')
+
+# Add project root to Python path
+project_root = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(project_root)
 
 import torch
 import torchvision
@@ -14,6 +17,7 @@ import numpy as np
 import json
 from support import torchdig
 from support import torchdig_tabular
+from support.dataman_extended import get_benign_loader_extended, get_dataset_info
 
 def ensure_dir_of(filepath):
     dirpath = os.path.dirname(filepath)
@@ -32,12 +36,13 @@ def load_model(model_name, dataset_name, device='cpu'):
         torch_model = model_class(pretrained=False)
     else:
         model_class = getattr(models, model_name)
-        if dataset_name == 'IoTID20':
-            from support.dataman_iotid20 import preprocess_iotid20_data
-            _, _, input_size, num_classes = preprocess_iotid20_data('support/dataset/IoTID20')
+        # Get dataset info for model initialization
+        try:
+            input_size, num_classes = get_dataset_info(dataset_name)
             torch_model = model_class(input_size=input_size, output_size=num_classes)
-        else:
-            torch_model = model_class(pretrained=False)
+        except Exception as e:
+            print(f"Error getting dataset info: {e}")
+            return None
     
     torch_model.load_state_dict(torch.load(model_file, map_location='cpu'))
     torch_model.to(device)
@@ -45,7 +50,7 @@ def load_model(model_name, dataset_name, device='cpu'):
     return torch_model
 
 def attack_with_dig_protection(model_name, dataset_name, device='cpu'):
-    """Attack simulation with DIG protection (uses Tabular DIG for IoTID20)"""
+    """Attack simulation with DIG protection (uses Tabular DIG for tabular datasets)"""
     print(f"Running attack simulation with DIG protection for {model_name} on {dataset_name}...")
     
     # Load model
@@ -54,13 +59,12 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu'):
         return
     
     # Load test data
-    if dataset_name == 'IoTID20':
-        from support.dataman_iotid20 import get_benign_loader_iotid20
-        test_loader = get_benign_loader_iotid20('IoTID20', 32, 'test', batch_size=100)
-        train_loader = get_benign_loader_iotid20('IoTID20', 32, 'train', batch_size=100)
-        
-        # Use Tabular DIG for IoTID20 (tabular data)
-        print("Using Tabular DIG for IoTID20 dataset...")
+    test_loader = get_benign_loader_extended(dataset_name, 32, 'test', batch_size=100)
+    train_loader = get_benign_loader_extended(dataset_name, 32, 'train', batch_size=100)
+    
+    # Use Tabular DIG for tabular datasets
+    if dataset_name in ['IoTID20', 'WUSTL', 'CICIoT2023']:
+        print(f"Using Tabular DIG for {dataset_name} dataset...")
         protected_model = torchdig_tabular.wrap_with_tabular_dig(model)
         protected_model.to(device)
         protected_model.eval()
@@ -68,7 +72,6 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu'):
         # Calculate suspicious score range for Tabular DIG
         from support.torchdig_tabular import calc_tabular_dig_range
         sus_score_range = calc_tabular_dig_range(protected_model, train_loader, device, n_batches=50)
-        
     else:
         print(f"Dataset {dataset_name} not supported in this version")
         return
@@ -125,36 +128,35 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu'):
                 sus_score = protected_model.calc_sus_score(x).item()
                 if not (sus_score_range[0] <= sus_score <= sus_score_range[1]):
                     detected_attacks += 1
-                    # Still evaluate accuracy even if detected
-            except RuntimeError as e:
-                print(f"Warning: Could not calculate suspicious score: {e}")
+                    continue  # Skip this sample if detected
+            except RuntimeError:
+                # If gradient calculation fails, assume not detected
+                pass
             x.requires_grad_(False)
             
-            # Evaluate accuracy
-            with torch.no_grad():
-                y_pred = protected_model(x)
-                _, predicted = torch.max(y_pred.data, 1)
-                correct += (predicted == y).sum().item()
-                total += y.size(0)
+            y_pred = protected_model(x)
+            _, predicted = torch.max(y_pred.data, 1)
+            total += y.size(0)
+            correct += (predicted == y).sum().item()
         
-        accuracy_after = 100 * correct / total
-        detection_rate = 100 * detected_attacks / (detected_attacks + total) if (detected_attacks + total) > 0 else 0
+        if total > 0:
+            accuracy_after = 100 * correct / total
+        else:
+            accuracy_after = 0.0
+        
+        detection_rate = 100 * detected_attacks / len(test_loader.dataset)
         
         attack_results['attack_results'].append({
             'strength': strength,
             'accuracy_after': accuracy_after,
             'accuracy_drop': original_accuracy - accuracy_after,
-            'detection_rate': detection_rate
+            'detection_rate': detection_rate,
+            'samples_detected': detected_attacks,
+            'samples_processed': total
         })
         
         print(f"  Accuracy after attack: {accuracy_after:.2f}%")
         print(f"  DIG detection rate: {detection_rate:.2f}%")
-        
-        # Restore model for next test
-        with torch.no_grad():
-            for param in model.parameters():
-                noise = torch.randn_like(param) * strength
-                param.sub_(noise)  # Reverse the attack
     
     # Save results
     output_dir = 'results/defense_results'
@@ -167,9 +169,7 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu'):
     print(f"Results saved to: {output_file}")
     
     # Print summary
-    print("\n" + "="*60)
-    print("DIG Protection Summary")
-    print("="*60)
+    print("\n=== DIG Protection Summary ===")
     for result in attack_results['attack_results']:
         print(f"Strength {result['strength']}: "
               f"Accuracy drop {result['accuracy_drop']:.2f}%, "
@@ -187,12 +187,7 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu'):
         return
     
     # Load test data
-    if dataset_name == 'IoTID20':
-        from support.dataman_iotid20 import get_benign_loader_iotid20
-        test_loader = get_benign_loader_iotid20('IoTID20', 32, 'test', batch_size=100)
-    else:
-        print(f"Dataset {dataset_name} not supported in this version")
-        return
+    test_loader = get_benign_loader_extended(dataset_name, 32, 'test', batch_size=100)
     
     # Get original accuracy
     correct = 0
@@ -286,9 +281,7 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu'):
     print(f"Results saved to: {output_file}")
     
     # Print summary
-    print("\n" + "="*60)
-    print("CIG Protection Summary")
-    print("="*60)
+    print("\n=== CIG Protection Summary ===")
     for result in attack_results['attack_results']:
         print(f"Strength {result['strength']}: "
               f"Accuracy drop {result['accuracy_drop']:.2f}%, "
@@ -358,7 +351,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('defense_type', choices=['dig', 'cig', 'combined'], help='Type of defense to test')
     parser.add_argument('model', type=str, help='Model name')
-    parser.add_argument('dataset', type=str, help='Dataset name')
+    parser.add_argument('dataset', type=str, choices=['IoTID20', 'WUSTL', 'CICIoT2023'], help='Dataset name')
     parser.add_argument('--device', type=str, default='cpu', help='Device to use')
     args = parser.parse_args()
     
