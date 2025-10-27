@@ -34,7 +34,7 @@ def load_model(model_name, dataset_name, device='cpu'):
         model_class = getattr(models, model_name)
         if dataset_name == 'IoTID20':
             from support.dataman_iotid20 import preprocess_iotid20_data
-            _, _, input_size, num_classes = preprocess_iotid20_data('support/dataset')
+            _, _, input_size, num_classes = preprocess_iotid20_data('support/dataset/IoTID20')
             torch_model = model_class(input_size=input_size, output_size=num_classes)
         else:
             torch_model = model_class(pretrained=False)

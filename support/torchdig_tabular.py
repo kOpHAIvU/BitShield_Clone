@@ -40,9 +40,13 @@ class TabularDIGProtectedModule(nn.Module):
         3. Entropy-based detection
         4. Statistical outlier detection
         """
-        # Ensure input requires grad
+        # Ensure input requires grad and is on same device as model
         if not x.requires_grad:
             x.requires_grad_(True)
+        
+        # Ensure model and input are on same device
+        device = next(self.model.parameters()).device
+        x = x.to(device)
             
         logits = self.model(x)
         nclasses = logits.shape[1]
@@ -54,7 +58,7 @@ class TabularDIGProtectedModule(nn.Module):
             gradient = grad(entropy.sum(), self.model_fc.weight, create_graph=True)[0]
             gradient_norm = torch.abs(gradient).sum()
         except:
-            gradient_norm = torch.tensor(0.0)
+            gradient_norm = torch.tensor(0.0, device=device)
         
         # Method 2: Feature-wise anomaly detection
         feature_anomaly = self._calc_feature_anomaly(x)
@@ -81,11 +85,13 @@ class TabularDIGProtectedModule(nn.Module):
         For tabular data, we can analyze individual features
         """
         if self.feature_stats is None:
-            return torch.tensor(0.0)
+            device = x.device
+            return torch.tensor(0.0, device=device)
         
-        # Calculate feature-wise z-scores
-        feature_means = self.feature_stats['mean']
-        feature_stds = self.feature_stats['std']
+        # Ensure feature stats are on same device as input
+        device = x.device
+        feature_means = self.feature_stats['mean'].to(device)
+        feature_stds = self.feature_stats['std'].to(device)
         
         # Avoid division by zero
         feature_stds = torch.where(feature_stds < 1e-8, torch.ones_like(feature_stds), feature_stds)
@@ -101,38 +107,46 @@ class TabularDIGProtectedModule(nn.Module):
         High entropy = uncertain predictions = potential attack
         """
         if self.entropy_stats is None:
-            return torch.tensor(0.0)
+            device = logits.device
+            return torch.tensor(0.0, device=device)
         
         # Calculate entropy
         probs = torch.softmax(logits, dim=1)
         entropy = -torch.sum(probs * torch.log(probs + 1e-8), dim=1)
         avg_entropy = torch.mean(entropy)
         
-        # Compare with normal entropy range
+        # Compare with normal entropy range (ensure same device)
+        device = logits.device
         normal_min, normal_max = self.entropy_stats['range']
+        normal_min = normal_min.to(device)
+        normal_max = normal_max.to(device)
         if avg_entropy < normal_min or avg_entropy > normal_max:
-            return torch.tensor(1.0)  # High anomaly
+            return torch.tensor(1.0, device=device)  # High anomaly
         else:
-            return torch.tensor(0.0)  # Normal
+            return torch.tensor(0.0, device=device)  # Normal
     
     def _calc_statistical_anomaly(self, x, logits):
         """
         Statistical outlier detection using multiple metrics
         """
         if self.gradient_stats is None:
-            return torch.tensor(0.0)
+            device = logits.device
+            return torch.tensor(0.0, device=device)
         
         # Calculate prediction confidence
         probs = torch.softmax(logits, dim=1)
         max_probs = torch.max(probs, dim=1)[0]
         avg_confidence = torch.mean(max_probs)
         
-        # Compare with normal confidence range
+        # Compare with normal confidence range (ensure same device)
+        device = logits.device
         normal_min, normal_max = self.gradient_stats['confidence_range']
+        normal_min = normal_min.to(device)
+        normal_max = normal_max.to(device)
         if avg_confidence < normal_min or avg_confidence > normal_max:
-            return torch.tensor(1.0)  # High anomaly
+            return torch.tensor(1.0, device=device)  # High anomaly
         else:
-            return torch.tensor(0.0)  # Normal
+            return torch.tensor(0.0, device=device)  # Normal
     
     def update_statistics(self, clean_data_loader, device='cpu'):
         """
@@ -140,6 +154,9 @@ class TabularDIGProtectedModule(nn.Module):
         This is crucial for tabular data as distributions can vary
         """
         print("Updating DIG statistics from clean data...")
+        
+        # Ensure model is on the correct device
+        self.model.to(device)
         
         features = []
         entropies = []
@@ -151,26 +168,26 @@ class TabularDIGProtectedModule(nn.Module):
                 x = x.to(device)
                 logits = self.model(x)
                 
-                # Collect features
-                features.append(x.cpu())
+                # Collect features (keep on same device)
+                features.append(x)
                 
                 # Collect entropy statistics
                 probs = torch.softmax(logits, dim=1)
                 entropy = -torch.sum(probs * torch.log(probs + 1e-8), dim=1)
-                entropies.append(entropy.cpu())
+                entropies.append(entropy)
                 
                 # Collect confidence statistics
                 max_probs = torch.max(probs, dim=1)[0]
-                confidences.append(max_probs.cpu())
+                confidences.append(max_probs)
         
-        # Calculate feature statistics
+        # Calculate feature statistics (keep on device)
         all_features = torch.cat(features, dim=0)
         self.feature_stats = {
             'mean': torch.mean(all_features, dim=0),
             'std': torch.std(all_features, dim=0)
         }
         
-        # Calculate entropy statistics
+        # Calculate entropy statistics (keep on device)
         all_entropies = torch.cat(entropies, dim=0)
         entropy_mean = torch.mean(all_entropies)
         entropy_std = torch.std(all_entropies)
@@ -178,7 +195,7 @@ class TabularDIGProtectedModule(nn.Module):
             'range': (entropy_mean - 2*entropy_std, entropy_mean + 2*entropy_std)
         }
         
-        # Calculate confidence statistics
+        # Calculate confidence statistics (keep on device)
         all_confidences = torch.cat(confidences, dim=0)
         conf_mean = torch.mean(all_confidences)
         conf_std = torch.std(all_confidences)
@@ -194,7 +211,11 @@ def wrap_with_tabular_dig(model, model_fc=None):
     """
     Wrap model with tabular DIG protection
     """
-    return TabularDIGProtectedModule(model, model_fc)
+    protected_model = TabularDIGProtectedModule(model, model_fc)
+    # Ensure the protected model is on the same device as the original model
+    device = next(model.parameters()).device
+    protected_model.to(device)
+    return protected_model
 
 def calc_tabular_dig_range(protected_model, train_loader, device='cpu', n_batches=20):
     """

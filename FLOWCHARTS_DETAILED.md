@@ -1,10 +1,236 @@
-# BitShield_Clone - Flow Charts Chi Tiết và Đẹp
+# BitShield_Clone — Tài liệu dự án (Full README)
+
+Tài liệu này tổng hợp đầy đủ cách cài đặt, chạy code, luồng hoạt động, cách huấn luyện, mô phỏng tấn công và cơ chế phòng thủ (DIG/CIG) của dự án BitShield_Clone. Các sơ đồ (flow charts) chi tiết nằm ở phần cuối giúp nắm nhanh pipeline tổng thể.
+
+---
+
+## Mục lục
+
+- [Tổng Quan Dự Án](#tổng-quan-dự-án)
+- [Yêu Cầu Hệ Thống](#yêu-cầu-hệ-thống)
+- [Cài Đặt](#cài-đặt)
+  - [Chế độ đơn giản (không Docker)](#chế-độ-đơn-giản-không-docker)
+  - [Chế độ đầy đủ (Docker)](#chế-độ-đầy-đủ-docker)
+- [Cấu Trúc Thư Mục](#cấu-trúc-thư-mục)
+- [Datasets](#datasets)
+- [Huấn Luyện Mô Hình (Training)](#huấn-luyện-mô-hình-training)
+- [Đánh Giá & Phòng Thủ (DIG/CIG)](#đánh-giá--phòng-thủ-digcig)
+- [Fine-tune DIG (đã tích hợp)](#fine-tune-dig-đã-tích-hợp)
+- [Kết Quả & Outputs](#kết-quả--outputs)
+- [Troubleshooting](#troubleshooting)
+- [Flow Charts Chi Tiết](#flow-charts-chi-tiết)
+
+---
 
 ## Tổng Quan Dự Án
 
 BitShield là một dự án nghiên cứu bảo vệ chống lại các cuộc tấn công bit-flip trên các file thực thi mạng nơ-ron sâu (DNN). Dự án cung cấp hai chế độ sử dụng:
 - **Chế độ đơn giản**: Không cần Docker, chỉ cần Python và Git
 - **Chế độ đầy đủ**: Với Docker để có tất cả tính năng
+
+---
+
+## Yêu Cầu Hệ Thống
+
+- Windows 10/11 hoặc Linux/macOS
+- Python 3.8+ (khuyến nghị 3.10/3.11)
+- pip / virtualenv (hoặc conda)
+- (Tùy chọn) CUDA/cuDNN nếu dùng GPU
+- (Tùy chọn) Docker Desktop nếu chạy chế độ đầy đủ
+
+---
+
+## Cài Đặt
+
+### Chế độ đơn giản (không Docker)
+
+```bash
+git clone <repo-url>
+cd BitShield_Clone
+
+# (Khuyến nghị) tạo virtual env
+python -m venv venv
+venv\Scripts\activate   # Windows
+# source venv/bin/activate   # Linux/macOS
+
+pip install --upgrade pip wheel
+pip install -r requirements.txt
+```
+
+### Chế độ đầy đủ (Docker)
+
+```bash
+# Yêu cầu: Docker Desktop bật và chạy
+./docker/setup.sh        # hoặc docker/setup.bat trên Windows
+./docker/run-in-docker.sh   # hoặc docker/run-in-docker.bat
+```
+
+---
+
+## Cấu Trúc Thư Mục
+
+```
+BitShield_Clone/
+├─ support/
+│  ├─ models/                 # Kiến trúc mô hình & training helpers
+│  ├─ dataset/                # Dữ liệu tabular (IoTID20/WUSTL/CICIoT2023)
+│  ├─ torchdig_tabular.py     # DIG cho tabular (đã được cải thiện)
+│  └─ ...
+├─ attack_with_defense_extended.py  # Mô phỏng tấn công + DIG/CIG (mở rộng)
+├─ attack_with_defense_updated.py   # Phiên bản cũ (IoTID20 focus)
+├─ train_all_models.py        # Train tất cả model × dataset
+├─ train_dataset_models.py    # Train tất cả model cho một dataset
+├─ train_all.bat              # Menu chạy nhanh trên Windows
+├─ results/                   # Thư mục lưu kết quả
+└─ FLOWCHARTS_DETAILED.md     # (File này) README + Flow Charts
+```
+
+---
+
+## Datasets
+
+Các dataset tabular đã hỗ trợ:
+
+- IoTID20
+- WUSTL-IIoT-2021
+- CICIoT2023
+
+Bạn có thể đặt dữ liệu vào `support/dataset/<DatasetName>/...` theo đúng tên thư mục, hoặc dùng script có sẵn để đảm bảo dữ liệu:
+
+```bash
+python tools/ensure_datasets.py
+```
+
+---
+
+## Huấn Luyện Mô Hình (Training)
+
+### Train tất cả model × tất cả dataset
+
+```bash
+python train_all_models.py
+```
+
+### Train nhanh (ít epoch) để smoke-test
+
+Sử dụng số epoch nhỏ khi gọi các lệnh training phía trên, ví dụ `--epochs 1` để smoke-test nhanh.
+
+### Train tất cả model trên một dataset cụ thể
+
+```bash
+python train_dataset_models.py IoTID20 --epochs 10 --batch-size 256 --device cpu
+python train_dataset_models.py WUSTL    --epochs 10 --batch-size 256 --device cpu
+python train_dataset_models.py CICIoT2023 --epochs 10 --batch-size 256 --device cpu
+```
+
+### Train trực tiếp bằng `train_extended.py`
+
+```bash
+# Training ResNetSEBlockIoT trên WUSTL
+python support/models/train_extended.py ResNetSEBlockIoT WUSTL --epochs 10 --use-class-weights --device cpu
+
+# Training SimpleCNNIoT trên CICIoT2023 với class weights
+python support/models/train_extended.py SimpleCNNIoT CICIoT2023 --epochs 15 --use-class-weights --device cpu
+
+# Training IoTID20 với tuỳ chọn nâng cao
+python support/models/train_extended.py ResNetSEBlockIoT IoTID20 --epochs 20 --batch-size 128 --use-class-weights --learning-rate 0.001 --weight-decay 0.0001 --device cpu
+```
+
+### Windows .bat (menu)
+
+```bat
+train_all.bat
+```
+
+
+```
+
+### Tuỳ chọn training
+
+| Parameter | Mô tả | Default |
+|-----------|-------|---------|
+| `--epochs` | Số epochs | 10 |
+| `--batch-size` | Batch size | 256 |
+| `--device` | Device (cpu/cuda) | cpu |
+| `--use-class-weights` | Sử dụng class weights | False |
+| `--learning-rate` | Learning rate | 1e-3 |
+| `--weight-decay` | Weight decay | 1e-4 |
+
+---
+
+## Đánh Giá & Phòng Thủ (DIG/CIG)
+
+Script chính: `attack_with_defense_extended.py` (hỗ trợ IoTID20, WUSTL, CICIoT2023)
+
+### Chạy DIG
+
+```bash
+python attack_with_defense_extended.py dig ResNetSEBlockIoT IoTID20 --device cpu
+```
+
+### Chạy CIG
+
+```bash
+python attack_with_defense_extended.py cig ResNetSEBlockIoT IoTID20 --device cpu
+```
+
+### Kết hợp (DIG + CIG)
+
+```bash
+python attack_with_defense_extended.py combined ResNetSEBlockIoT IoTID20 --device cpu
+```
+
+Kết quả sẽ được lưu ở `results/defense_results/` dưới dạng JSON.
+
+Gợi ý: `attack_with_defense_extended.py` đã tích hợp:
+- Dynamic threshold theo sức mạnh tấn công cho DIG
+- Không bỏ qua mẫu khi phát hiện (tính accuracy công bằng)
+- Khôi phục tham số mô hình sau mỗi lượt tấn công
+- Fallback cho ultra-extreme (≥ 10.0)
+
+---
+
+## Fine-tune DIG (đã tích hợp)
+
+Chúng tôi đã cải thiện DIG cho dữ liệu tabular trong `support/torchdig_tabular.py` và logic mô phỏng trong `attack_with_defense_extended.py`:
+
+- Đồng bộ device cho mọi tensor (tránh lỗi cuda/cpu mismatch)
+- Không skip samples khi detect (đánh giá accuracy công bằng như CIG)
+- Dynamic threshold theo sức mạnh tấn công (0.5×/0.8×/1.0×/1.1×)
+- Fallback detection cho ultra-extreme attacks (≥ 10.0)
+- Attack simulation dùng noise tương đối (tỉ lệ theo std tham số)
+- Model restoration an toàn sau mỗi lượt tấn công (hoặc reload từ file)
+- Tính detection-rate theo số lượng **samples** (không phải batch)
+
+Chi tiết tính năng DIG (tabular):
+- Adaptive thresholds từ clean data (percentile 10–90)
+- Dynamic multiplier theo strength: yếu → 1.1×, vừa → 1.0×, mạnh → 0.8×, 5.0+ → 0.4×, 10.0+ → 0.2×
+- Kết hợp nhiều tín hiệu: gradient norm, feature z-score, entropy anomaly, confidence anomaly
+
+Ví dụ kết quả kỳ vọng (IoTID20, ResNetSEBlockIoT):
+
+- Strength 0.5–1.0: Accuracy drop thấp, detection thấp (realistic)
+- Strength 2.0: Accuracy drop 25–30%, detection ~100% (balance)
+- Strength 5.0: Accuracy drop mạnh, detection ~100%
+- Strength 10.0: Accuracy drop rất mạnh, detection 100% (fallback nếu cần)
+
+---
+
+## Kết Quả & Outputs
+
+- Models: `models/<Dataset>/<Model>/<Model>.pt` và `<Model>_best.pt`
+- Training results: `models/<Dataset>/<Model>/<Model>_results.json`
+- Defense results (DIG/CIG): `results/defense_results/<Dataset>_<Model>_*.json`
+
+---
+
+## Troubleshooting
+
+- PyTorch CUDA: Nếu không có CUDA, dùng `--device cpu`.
+- Lỗi device mismatch (cuda/cpu): đã xử lý trong `support/torchdig_tabular.py`; đảm bảo mọi tensor/model cùng `--device` (cpu/cuda).
+- DIG detection rate = 0% cho attack nhẹ: bình thường (dynamic threshold tăng để giảm false-positive).
+- DIG detection rate = 100% cho attack 10.0: do fallback cho ultra-extreme; kiểm tra log threshold/multiplier.
+- Nếu model hỏng sau attack: script sẽ restore từ tham số gốc hoặc reload từ file.
 
 ---
 
@@ -17,18 +243,24 @@ graph TD
     B -->|"📦 Đơn Giản"| C["🐍 Setup Python Environment<br/>• Python 3.8+<br/>• Virtual Environment<br/>• Install Dependencies"]
     B -->|"🐳 Đầy Đủ"| D["🐳 Setup Docker Environment<br/>• Docker Desktop<br/>• Build Docker Image<br/>• Configure Container"]
     
-    C --> E["📥 Download Datasets<br/>• CIFAR10, MNIST<br/>• FashionC, ImageNet<br/>• Auto-download & Setup"]
+    C --> E["📥 Download Datasets<br/>• IoTID20, WUSTL-IIoT-2021<br/>• CICIoT2023<br/>• Auto-download & Setup"]
     D --> E
     
     E --> F["🎓 Train Models<br/>• Load Model Architecture<br/>• Setup Data Loaders<br/>• Training Loop<br/>• Save Checkpoints"]
-    F --> G["🧪 Test Models<br/>• Load Trained Model<br/>• Evaluate on Test Set<br/>• Calculate Metrics<br/>• Generate Reports"]
+    F --> G["🧪 Test Models<br/>• Load Trained Model<br/>• Evaluate on Test Set<br/>• Accuracy/TPR/F1/MCC<br/>• Generate Reports"]
     
     G --> H{"🔍 Chế Độ Đầy Đủ?"}
     H -->|"❌ Không"| I["✅ Kết Thúc - Chế Độ Đơn Giản<br/>• Models Trained<br/>• Basic Testing Done<br/>• Ready for Deployment"]
     H -->|"✅ Có"| J["🔨 Build Binary Files<br/>• Convert PyTorch to IR<br/>• TVM/Glow/NNFusion Compilation<br/>• Add Protection Mechanisms"]
     
-    J --> K["🔍 Bit-Flip Sweep Analysis<br/>• Load Binary File<br/>• Test Each Bit Position<br/>• Calculate Vulnerability Scores<br/>• Store Results"]
-    K --> L["⚔️ Attack Simulation<br/>• Setup Memory Model<br/>• Simulate Bit Flips<br/>• Test Protection Mechanisms<br/>• Record Attack Results"]
+    J --> K["🔍 (Tùy chọn) Phân tích sweep bit-flip<br/>• Áp dụng nếu dùng pipeline nhị phân
+• Tạo điểm yếu tiềm năng
+• Lưu kết quả"]
+    K --> L["⚔️ Mô phỏng tấn công (DIG/CIG)
+• Nhiễu tham số theo độ mạnh
+• DIG: dynamic thresholds, multi-signal
+• Đánh giá detection & accuracy
+• Lưu kết quả"]
     L --> M["🔬 Ghidra Analysis<br/>• Import Binary Files<br/>• Static Code Analysis<br/>• Extract Instructions<br/>• Generate Reports"]
     M --> N["📊 Generate Results<br/>• Compile Analysis Data<br/>• Create Visualizations<br/>• Generate Reports<br/>• Export Results"]
     N --> O["🏆 Kết Thúc - Chế Độ Đầy Đủ<br/>• Complete Security Analysis<br/>• Protection Evaluation<br/>• Research Results Ready"]
@@ -67,7 +299,7 @@ graph TD
     F --> G
     
     G --> H["📦 Cài Đặt Dependencies<br/>• Install PyTorch<br/>• Install TVM<br/>• Install Other Libraries<br/>• Verify Dependencies"]
-    H --> I["📥 Download Datasets<br/>• CIFAR10 (170MB)<br/>• MNIST (11MB)<br/>• FashionC (30MB)<br/>• ImageNet (150GB)"]
+    H --> I["📥 Download Datasets<br/>• IoTID20 (CSV)<br/>• WUSTL-IIoT-2021 (CSV)<br/>• CICIoT2023 (CSV)<br/>• tools/ensure_datasets.py"]
     
     I --> J{"🐳 Chế Độ Docker?"}
     J -->|"✅ Có"| K["🏗️ Build Docker Image<br/>• Pull Base Image<br/>• Install Dependencies<br/>• Configure Environment<br/>• Build Custom Image"]
@@ -95,16 +327,20 @@ graph TD
 
 ```mermaid
 graph TD
-    A["🎓 Start Training Process<br/>• Select Model Architecture<br/>• Choose Dataset<br/>• Set Hyperparameters"] --> B["📋 Chọn Model & Dataset<br/>• Model: ResNet50/DenseNet121/GoogLeNet<br/>• Dataset: CIFAR10/MNIST/FashionC<br/>• Input Size: 32x32/28x28/96x96"]
+    A["🎓 Start Training Process<br/>• Select Model Architecture<br/>• Choose Dataset<br/>• Set Hyperparameters"] --> B["📋 Chọn Model & Dataset<br/>• Model: ResNetSEBlockIoT/SimpleCNNIoT/EfficientCNN/PureCNN/Custom
+• Dataset: IoTID20/WUSTL-IIoT-2021/CICIoT2023
+• Input Size: số features tabular"]
     
     B --> C{"🏗️ Model Type"}
-    C -->|"🔧 TorchVision"| D["📦 Load TorchVision Model<br/>• torchvision.models.resnet50<br/>• Pretrained Weights<br/>• Modify Final Layer<br/>• Setup for Transfer Learning"]
-    C -->|"⚙️ Custom"| E["🔨 Load Custom Model<br/>• Import from support.models<br/>• Custom Architecture<br/>• Initialize Weights<br/>• Setup Model Parameters"]
+    C -->|"⚙️ Tabular Models"| E["🔨 Load IoT Tabular Model<br/>• Import from support.models
+• Initialize with input_size & num_classes
+• Setup Optimizer/Loss"]
     
     D --> F["📊 Setup Data Loaders<br/>• Create Dataset Objects<br/>• Apply Transforms<br/>• Setup Batch Size<br/>• Configure Workers"]
     E --> F
     
-    F --> G["⚙️ Initialize Optimizer & Loss<br/>• Adam/SGD Optimizer<br/>• Learning Rate Setup<br/>• CrossEntropy Loss<br/>• Learning Rate Scheduler"]
+    F --> G["⚙️ Initialize Optimizer & Loss<br/>• Adam/AdamW Optimizer<br/>• Learning Rate Setup<br/>• CrossEntropy/Focal Loss (tùy dataset)
+• LR Scheduler"]
     G --> H["🔄 Training Loop<br/>• Set Number of Epochs<br/>• Setup Progress Tracking<br/>• Initialize Metrics<br/>• Start Training"]
     
     H --> I["➡️ Forward Pass<br/>• Load Batch Data<br/>• Move to Device<br/>• Model Forward Pass<br/>• Get Predictions"]
@@ -260,15 +496,15 @@ graph TD
 - **Build Module**: Chuyển đổi mô hình thành binary files với TVM/Glow/NNFusion
 - **Sweep Module**: Phân tích bit-flip vulnerabilities chi tiết
 - **Attack Module**: Mô phỏng tấn công thực tế
-- **Analysis Module**: Phân tích binary với Ghidra
+- **(Tùy chọn) Build/Sweep/Analysis**: Dùng khi chạy pipeline nhị phân (TVM/Glow/NNFusion/Ghidra)
 
 ### 2. **Protection Mechanisms**
 - **DIG (Detection of Integrity Guard)**: Phát hiện thay đổi integrity
 - **CIG (Coverage Integrity Guard)**: Theo dõi coverage để phát hiện anomalies
 
 ### 3. **Supported Models**
-- ResNet50, DenseNet121, GoogLeNet, LeNet1
-- CIFAR10, MNIST, FashionC, ImageNet datasets
+- ResNetSEBlockIoT, SimpleCNNIoT, EfficientCNN, PureCNN, CustomModel, CustomModel2
+- Datasets: IoTID20, WUSTL-IIoT-2021, CICIoT2023
 
 ### 4. **Compilers**
 - TVM, Glow, NNFusion
@@ -277,4 +513,4 @@ graph TD
 - **Simple Mode**: Chỉ training và testing
 - **Full Mode**: Toàn bộ pipeline từ training đến attack simulation
 
-Các flow chart này cung cấp cái nhìn tổng quan chi tiết và đẹp mắt về cách dự án BitShield hoạt động, với thông tin chi tiết về từng bước trong quy trình.
+Các flow chart này cung cấp cái nhìn tổng quan chi tiết về cách dự án BitShield hoạt động, với thông tin chi tiết về từng bước trong quy trình.
