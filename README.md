@@ -65,6 +65,142 @@ pip install -r requirements.txt
 ./docker/run-in-docker.sh   # hoặc docker/run-in-docker.bat
 ```
 
+### Cài đặt TVM (ưu tiên cho Windows/WSL)
+
+> **Lý do:** Pipeline `buildmodels.py` cần TVM để sinh binary `tvm/*.so`, ghi nhận coverage và chèn DIG/CIG. Nếu không có TVM, script chỉ hiển thị cảnh báo và bỏ qua bước build.
+
+**Phương án nhanh (khuyến nghị WSL Ubuntu 22.04):**
+- Cài Windows Subsystem for Linux và Ubuntu (`wsl --install -d Ubuntu-22.04`).
+- Trong Ubuntu: `sudo apt update && sudo apt install -y git build-essential cmake ninja-build llvm-14-dev libopenblas-dev python3-venv`.
+- Tạo environment: `python3 -m venv ~/.venvs/tvm && source ~/.venvs/tvm/bin/activate`.
+- Clone TVM: `git clone --recursive https://github.com/apache/tvm.git ~/tvm`.
+- Build runtime + python: 
+  ```bash
+  cd ~/tvm
+  mkdir build && cp cmake/config.cmake build/
+  sed -i 's/USE_LLVM OFF/USE_LLVM llvm-config-14/' build/config.cmake
+  sed -i 's/USE_CUDA OFF/USE_CUDA ON/' build/config.cmake  # nếu có CUDA, bỏ qua nếu không
+  cmake -S . -B build -G Ninja
+  cmake --build build --parallel
+  cmake --install build --prefix ~/.local
+  pip install -e python
+  ```
+- Thiết lập biến môi trường (thêm vào `~/.bashrc`):
+  ```bash
+  export TVM_HOME=$HOME/tvm
+  export PYTHONPATH=$TVM_HOME/python:${PYTHONPATH}
+  export PATH=$HOME/.local/bin:${PATH}
+  ```
+
+**Phương án thuần Windows (Visual Studio 2022 Build Tools):**
+- Cài Visual Studio Build Tools (Desktop development with C++), CMake ≥3.26, Ninja, LLVM 15 (bản prebuilt), Python 3.10/3.11.
+- Tạo virtualenv: `python -m venv %USERPROFILE%\venvs\tvm` và `venvs\tvm\Scripts\activate`.
+- Clone TVM và mở `x64 Native Tools Command Prompt for VS 2022`:
+  ```bat
+  git clone --recursive https://github.com/apache/tvm.git %USERPROFILE%\tvm
+  cd %USERPROFILE%\tvm
+  mkdir build
+  copy cmake\config.cmake build\
+  ```
+- Sửa `build\config.cmake` bật LLVM (`set(USE_LLVM "C:\\Program Files\\LLVM\\bin\\llvm-config.exe")`), tắt CUDA nếu không dùng.
+- Build:
+  ```bat
+  cmake -S . -B build -G "Ninja Multi-Config"
+  cmake --build build --config Release
+  cmake --install build --config Release --prefix %USERPROFILE%\tvm\dist
+  pip install -e python
+  ```
+- Thiết lập env (PowerShell):
+  ```powershell
+  $env:TVM_HOME = "$env:USERPROFILE\tvm"
+  $env:PYTHONPATH = "$env:TVM_HOME\python;" + $env:PYTHONPATH
+  $env:PATH = "$env:USERPROFILE\tvm\dist\bin;" + $env:PATH
+  ```
+
+**Kiểm tra:**
+
+```bash
+python - <<'PY'
+import tvm
+from tvm import relay
+print("TVM version:", tvm.__version__)
+print("LLVM enabled:", tvm.runtime.enabled("llvm"))
+PY
+```
+
+Nếu lệnh trên in `LLVM enabled: True`, bạn đã sẵn sàng chạy `python buildmodels.py --compiler tvm ...`.
+
+**Khắc phục lỗi `ModuleNotFoundError: No module named 'tvm._ffi'`:**
+
+Lỗi này xảy ra khi TVM C++ library đã được build nhưng Python bindings (`_ffi` module) chưa được build. Module `_ffi` là C extension cần được compile trong quá trình CMake build.
+
+**Giải pháp 1: Rebuild với Python bindings (khuyến nghị)**
+
+```bash
+cd ~/tvm
+
+# Xóa build cũ (nếu cần)
+# rm -rf build
+
+# Rebuild với Python bindings
+mkdir -p build && cd build
+cp ../cmake/config.cmake .
+# Đảm bảo config.cmake có USE_LLVM được bật
+sed -i 's/USE_LLVM OFF/USE_LLVM llvm-config-14/' config.cmake  # hoặc llvm-config-13 tùy version
+
+# Build với Python support
+cmake .. -G Ninja
+cmake --build . --parallel
+
+# Cài đặt Python package (sau khi CMake build xong)
+cd ..
+pip install -e python
+
+# Thiết lập environment variables
+export TVM_HOME=$HOME/tvm
+export PYTHONPATH=$TVM_HOME/python:${PYTHONPATH}
+export LD_LIBRARY_PATH=$TVM_HOME/build:$TVM_HOME/build/lib:${LD_LIBRARY_PATH}
+
+# Kiểm tra
+python -c "import tvm; print('TVM version:', tvm.__version__)"
+```
+
+**Giải pháp 2: Build Python bindings riêng (nếu CMake đã build xong)**
+
+```bash
+cd ~/tvm
+
+# Đảm bảo libtvm.so tồn tại
+ls -la build/libtvm.so
+
+# Set TVM_LIBRARY_PATH để Python bindings tìm thấy library
+export TVM_LIBRARY_PATH=$HOME/tvm/build
+
+# Rebuild Python package với force reinstall
+pip install --force-reinstall --verbose -e python
+
+# Thiết lập environment variables
+export TVM_HOME=$HOME/tvm
+export PYTHONPATH=$TVM_HOME/python:${PYTHONPATH}
+export LD_LIBRARY_PATH=$TVM_HOME/build:$TVM_HOME/build/lib:${LD_LIBRARY_PATH}
+
+# Kiểm tra
+python -c "import tvm; print('TVM version:', tvm.__version__)"
+```
+
+**Giải pháp 3: Kiểm tra và sửa lỗi thường gặp**
+
+Nếu vẫn gặp lỗi:
+1. Kiểm tra `libtvm.so` tồn tại: `ls -la ~/tvm/build/libtvm.so`
+2. Kiểm tra Python environment: `which python` và `python --version`
+3. Xóa cache Python: 
+   ```bash
+   find ~/tvm/python -name "*.pyc" -delete
+   find ~/tvm/python -name "__pycache__" -type d -exec rm -r {} +
+   ```
+4. Kiểm tra CMake config có bật Python: Trong `build/config.cmake`, đảm bảo không có `set(USE_PYTHON OFF)`
+5. Rebuild từ đầu: Xóa `build/` và rebuild lại với các bước ở Giải pháp 1
+
 ---
 
 ## Cấu Trúc Thư Mục

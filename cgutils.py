@@ -1,18 +1,17 @@
-# import tvm  # Skip TVM
-# import tvm.relay as r  # Skip TVM
-# import tvm.ir as ir  # Skip TVM
-# from tvm.ir.instrument import pass_instrument  # Skip TVM
-# from tvm.ir import IRModule  # Skip TVM
+import tvm
+import tvm.relay as r
+import tvm.ir as ir
+from tvm.ir.instrument import pass_instrument
+from tvm.ir import IRModule
+from tvm.relay.qnn.op import dequantize
 import numpy as np
-# from tvm.relay.qnn.op import dequantize  # Skip TVM
 from typing import Tuple
 import sys
 import os
 
 import utils
 
-# known_ops = {ir.op.Op.get(x): x for x in ir.op.Op.list_op_names()}  # Skip TVM
-known_ops = {}
+known_ops = {ir.op.Op.get(x): x for x in ir.op.Op.list_op_names()}
 
 def simple_convish_weight(conv):
     return conv.args[1]

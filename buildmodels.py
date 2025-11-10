@@ -5,25 +5,7 @@ import os
 import shutil
 import tempfile
 
-# Skip TVM - use simplified approach
-print("TVM not available. Using simplified approach without model building.")
-TVM_AVAILABLE = False
-
-# Create a minimal modman module for basic functionality
-class modman:
-    @staticmethod
-    def get_irmod(*args, **kwargs):
-        print("TVM model building skipped - using simplified approach")
-        return None, {}
-    
-    @staticmethod
-    def build_module(*args, **kwargs):
-        print("TVM module building skipped - using simplified approach")
-        return None, None
-    
-    @staticmethod
-    def create_zeroed_extra_params_dict(*args, **kwargs):
-        return {}
+import modman
 
 import dataman
 import record
@@ -34,7 +16,17 @@ import prune
 import cig
 from eval import evalutils
 
+TVM_AVAILABLE = getattr(modman, 'TVM_AVAILABLE', False)
+
+
+def ensure_tvm_available():
+    if not TVM_AVAILABLE:
+        raise RuntimeError(
+            "TVM runtime không khả dụng. Vui lòng cài đặt TVM theo hướng dẫn trong README (mục 'Cài đặt TVM') hoặc chạy với compiler glow/nnfusion."
+        )
+
 def maybe_record_coverages(bi: utils.BinaryInfo, output_dir):
+    ensure_tvm_available()
     model_name, dataset = bi.model_name, bi.dataset
     mode = bi.dig.split('_')[0]
     if mode == 'nd':
@@ -51,7 +43,7 @@ def maybe_record_coverages(bi: utils.BinaryInfo, output_dir):
         print(f'Skipping recording {output_file}')
         return
 
-    print('Recording extra params to {output_file}')
+    print(f'Recording extra params to {output_file}')
     # Use the last xx% of data in each class, leaving the rest for threshold determining
     data_loader = dataman.get_sampling_benign_loader(
         dataset, bi.input_img_size, 'train', cfg.batch_size, 0.90, start_frac=0.10
@@ -79,6 +71,7 @@ def finalise_built_mod(bi, fpath, output_defs, check_acc):
         assert evalutils.check_so_acc(fpath) > 0.6
 
 def get_dig_instrumented_mod(bi: utils.BinaryInfo):
+    ensure_tvm_available()
     model_name, dataset = bi.model_name, bi.dataset
     mode = bi.dig.split('_r')[0]  # r for random
     frac = float(bi.dig.split('_r')[1]) if '_r' in bi.dig else 1.
@@ -129,6 +122,7 @@ def get_dig_instrumented_mod(bi: utils.BinaryInfo):
     return mod, params, output_defs
 
 def maybe_build_tvm_mod_dig_only(bi: utils.BinaryInfo, check_acc):
+    ensure_tvm_available()
     output_file = f'{cfg.built_dir}/{bi.fname}'
     target = modman.targets['avx2' if bi.avx else 'llvm']
 
@@ -147,6 +141,7 @@ def maybe_build_tvm_mod_dig_only(bi: utils.BinaryInfo, check_acc):
     finalise_built_mod(bi, output_file, output_defs, check_acc)
 
 def maybe_build_classic_cig_tvm(bi, check_acc, patcher_kwargs={}, plan_fn_kwargs={}, planner_kwargs={}):
+    ensure_tvm_available()
     output_file = f'{cfg.built_dir}/{bi.fname}'
     if os.path.exists(output_file):
         print(f'Skipping building {output_file}')
@@ -176,6 +171,7 @@ def maybe_build_classic_cig_tvm(bi, check_acc, patcher_kwargs={}, plan_fn_kwargs
     finalise_built_mod(bi, output_file, output_defs, check_acc)
 
 def maybe_build_ccN_cig_tvm(cig_name, bi: utils.BinaryInfo, check_acc):
+    ensure_tvm_available()
     output_file = f'{cfg.built_dir}/{bi.fname}'
     if os.path.exists(output_file):
         print(f'Skipping building {output_file}')
@@ -279,6 +275,8 @@ if __name__ == '__main__':
                 maybe_build_nnf_mod(bi, cfg.built_dir, cfg.built_aux_dir, args.check_acc)
             else:
                 raise ValueError(f'Unknown compiler {bi.compiler}')
+        except RuntimeError as exc:
+            utils.warn(str(exc))
         except FileNotFoundError as e:
             if cfg.models_dir in e.filename:
                 utils.warn(f'Skipping building due to lacking file(s): {e.filename}')
