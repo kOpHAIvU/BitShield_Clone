@@ -121,14 +121,17 @@ def get_dig_instrumented_mod(bi: utils.BinaryInfo):
 
     return mod, params, output_defs
 
-def maybe_build_tvm_mod_dig_only(bi: utils.BinaryInfo, check_acc):
+def maybe_build_tvm_mod_dig_only(bi: utils.BinaryInfo, check_acc, force=False):
     ensure_tvm_available()
     output_file = f'{cfg.built_dir}/{bi.fname}'
     target = modman.targets['avx2' if bi.avx else 'llvm']
 
-    if os.path.exists(output_file):
-        print(f'Skipping building {output_file}')
+    if os.path.exists(output_file) and not force:
+        print(f'Skipping building {output_file} (use --force to rebuild)')
         return
+    if force and os.path.exists(output_file):
+        print(f'Force rebuilding {output_file}...')
+        os.remove(output_file)
     print(f'Building {output_file}')
 
     mod, params, output_defs = get_dig_instrumented_mod(bi)
@@ -140,12 +143,15 @@ def maybe_build_tvm_mod_dig_only(bi: utils.BinaryInfo, check_acc):
 
     finalise_built_mod(bi, output_file, output_defs, check_acc)
 
-def maybe_build_classic_cig_tvm(bi, check_acc, patcher_kwargs={}, plan_fn_kwargs={}, planner_kwargs={}):
+def maybe_build_classic_cig_tvm(bi, check_acc, patcher_kwargs={}, plan_fn_kwargs={}, planner_kwargs={}, force=False):
     ensure_tvm_available()
     output_file = f'{cfg.built_dir}/{bi.fname}'
-    if os.path.exists(output_file):
-        print(f'Skipping building {output_file}')
+    if os.path.exists(output_file) and not force:
+        print(f'Skipping building {output_file} (use --force to rebuild)')
         return
+    if force and os.path.exists(output_file):
+        print(f'Force rebuilding {output_file}...')
+        os.remove(output_file)
     print(f'Patching to generate {output_file}')
 
     output_defs = None
@@ -170,12 +176,15 @@ def maybe_build_classic_cig_tvm(bi, check_acc, patcher_kwargs={}, plan_fn_kwargs
 
     finalise_built_mod(bi, output_file, output_defs, check_acc)
 
-def maybe_build_ccN_cig_tvm(cig_name, bi: utils.BinaryInfo, check_acc):
+def maybe_build_ccN_cig_tvm(cig_name, bi: utils.BinaryInfo, check_acc, force=False):
     ensure_tvm_available()
     output_file = f'{cfg.built_dir}/{bi.fname}'
-    if os.path.exists(output_file):
-        print(f'Skipping building {output_file}')
+    if os.path.exists(output_file) and not force:
+        print(f'Skipping building {output_file} (use --force to rebuild)')
         return
+    if force and os.path.exists(output_file):
+        print(f'Force rebuilding {output_file}...')
+        os.remove(output_file)
     print(f'Patching to generate {output_file}')
 
     irmod, params, output_defs = get_dig_instrumented_mod(bi)
@@ -189,10 +198,10 @@ def maybe_build_ccN_cig_tvm(cig_name, bi: utils.BinaryInfo, check_acc):
 
     finalise_built_mod(bi, output_file, output_defs, check_acc)
 
-def maybe_build_tvm_mod_cig(bi, check_acc, **kwargs):
+def maybe_build_tvm_mod_cig(bi, check_acc, force=False, **kwargs):
     if bi.cig.startswith('cc'):
-        return maybe_build_ccN_cig_tvm(bi.cig, bi, check_acc, **kwargs)
-    return maybe_build_classic_cig_tvm(bi, check_acc, **kwargs)
+        return maybe_build_ccN_cig_tvm(bi.cig, bi, check_acc, force=force, **kwargs)
+    return maybe_build_classic_cig_tvm(bi, check_acc, force=force, **kwargs)
 
 def maybe_build_glow_mod(bi, output_dir, weights_out_dir, check_acc):
     output_file = f'{output_dir}/{bi.fname}'
@@ -248,6 +257,7 @@ if __name__ == '__main__':
     parser.add_argument('-O', '--opt-level', type=int, default=3)
     parser.add_argument('-i', '--cig', default='nc')
     parser.add_argument('-I', '--dig', default='nd')
+    parser.add_argument('-f', '--force', action='store_true', help='Force rebuild even if output file exists')
     args = parser.parse_args()
 
     bis_to_build = cfg.all_build_bis
@@ -266,9 +276,9 @@ if __name__ == '__main__':
 
             if bi.compiler == 'tvm':
                 if bi.cig == 'ncnp':
-                    maybe_build_tvm_mod_dig_only(bi, args.check_acc)
+                    maybe_build_tvm_mod_dig_only(bi, args.check_acc, force=args.force)
                 else:
-                    maybe_build_tvm_mod_cig(bi, args.check_acc)
+                    maybe_build_tvm_mod_cig(bi, args.check_acc, force=args.force)
             elif bi.compiler == 'glow':
                 maybe_build_glow_mod(bi, cfg.built_dir, cfg.built_aux_dir, args.check_acc)
             elif bi.compiler == 'nnfusion':

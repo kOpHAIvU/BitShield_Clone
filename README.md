@@ -130,6 +130,87 @@ PY
 
 Nếu lệnh trên in `LLVM enabled: True`, bạn đã sẵn sàng chạy `python buildmodels.py --compiler tvm ...`.
 
+### Cách chạy Build Module với TVM
+
+Sau khi TVM đã được cài đặt và kiểm tra thành công, bạn có thể chạy pipeline build binary files:
+
+**1. Trong WSL (nếu cài TVM trên WSL):**
+
+```bash
+# Activate virtualenv TVM
+source ~/.venvs/tvm/bin/activate
+
+# Thiết lập biến môi trường (nếu chưa thêm vào ~/.bashrc)
+export TVM_HOME=$HOME/tvm
+export PYTHONPATH=$TVM_HOME/python:${PYTHONPATH}
+export LD_LIBRARY_PATH=$TVM_HOME/build:$TVM_HOME/build/lib:${LD_LIBRARY_PATH}
+
+# Chuyển đến thư mục project (mount từ Windows)
+cd /mnt/d/Programming/BitShield_Clone
+
+# Cài đặt dependencies Python (nếu chưa)
+pip install -r requirements.txt
+
+# Chạy build module
+python buildmodels.py --compiler tvm --model resnet50 --dataset CIFAR10 --dig nd --cig ncnp --no-check-acc
+```
+
+**2. Trên Windows PowerShell (nếu cài TVM native trên Windows):**
+
+```powershell
+# Activate virtualenv (nếu có)
+.\venv\Scripts\Activate.ps1
+
+# Thiết lập biến môi trường
+$env:TVM_HOME = "$env:USERPROFILE\tvm"
+$env:PYTHONPATH = "$env:TVM_HOME\python;" + $env:PYTHONPATH
+$env:PATH = "$env:USERPROFILE\tvm\dist\bin;" + $env:PATH
+
+# Chạy build module
+python buildmodels.py --compiler tvm --model resnet50 --dataset CIFAR10 --dig nd --cig ncnp --no-check-acc
+```
+
+**Các tham số của `buildmodels.py`:**
+
+| Tham số | Mô tả | Ví dụ |
+|---------|-------|-------|
+| `--compiler` | Compiler sử dụng (tvm/glow/nnfusion) | `tvm` |
+| `--model` | Tên model | `resnet50`, `googlenet`, `densenet121` |
+| `--dataset` | Dataset | `CIFAR10`, `MNISTC`, `FashionC`, `ImageNet` |
+| `--dig` | DIG mode | `nd` (no defense), `gn1`, `gn2`, `id`, `rb`, `cb` |
+| `--cig` | CIG mode | `nc` (no CIG), `ncnp`, `cc1`, `cc2` |
+| `--opt-level` | Optimization level | `0`, `1`, `2`, `3` (default: 3) |
+| `--no-check-acc` | Bỏ qua kiểm tra accuracy | (flag) |
+| `--no-avx` | Tắt AVX instructions | (flag) |
+
+**Ví dụ build với các mode khác:**
+
+```bash
+# Build với DIG mode gn1 và CIG mode cc2
+python buildmodels.py --compiler tvm --model resnet50 --dataset CIFAR10 --dig gn1 --cig cc2
+
+# Build với optimization level 0 (debug)
+python buildmodels.py --compiler tvm --model googlenet --dataset CIFAR10 --dig nd --cig ncnp --opt-level 0
+
+# Build tất cả models theo config mặc định (xem cfg.py)
+python buildmodels.py
+```
+
+**Output:**
+- Binary files: `built/tvm-*/<model>-<dataset>-<cig>-<dig>.so`
+- Coverage files (nếu có DIG): `built-aux/coverages/<dataset>-<model>-<mode>.pth`
+- Output definitions: `built-aux/output-defs/<dataset>-<model>-<mode>.json`
+
+**Khắc phục lỗi `ModuleNotFoundError: No module named 'tvm_ffi'`:**
+
+Nếu gặp lỗi này, cần cài thêm package `apache-tvm-ffi`:
+
+```bash
+# Trong WSL, với venv TVM đã activate
+cd ~/tvm
+SETUPTOOLS_SCM_PRETEND_VERSION=0.0.1 pip install 3rdparty/tvm-ffi
+```
+
 **Khắc phục lỗi `ModuleNotFoundError: No module named 'tvm._ffi'`:**
 
 Lỗi này xảy ra khi TVM C++ library đã được build nhưng Python bindings (`_ffi` module) chưa được build. Module `_ffi` là C extension cần được compile trong quá trình CMake build.
