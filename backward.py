@@ -40,9 +40,12 @@ def dl_backward(lish, delta_y, delta_xs, mp_out, verbose=False):
         ('nn.relu',): dl_backward_nonlinear,
         ('nn.dense',): dl_backward_dense,
         ('nn.conv2d',): dl_backward_conv2d,
+        ('nn.conv1d',): dl_backward_conv1d,
         ('reshape',): dl_backward_reshape,
-        ('nn.max_pool2d', 'nn.avg_pool2d', 'nn.global_avg_pool2d_grad'): dl_backward_basic_pool,
+        ('nn.max_pool2d', 'nn.avg_pool2d', 'nn.global_avg_pool2d_grad',
+         'nn.max_pool1d', 'nn.avg_pool1d'): dl_backward_basic_pool,
         ('nn.adaptive_avg_pool2d',): dl_backward_adaptive_avg_pool2d,
+        ('nn.adaptive_avg_pool1d',): dl_backward_adaptive_avg_pool1d,
         ('concatenate',): dl_backward_concatenate,
         ('nn.batch_norm',): dl_backward_batch_norm,
     }
@@ -85,6 +88,10 @@ def dl_backward_conv2d(lish, delta_y, delta_xs, mp_out):
     backward_data, _backward_weight = get_grad_fn(lish)(lish, mp_out)
     return [backward_data]
 
+def dl_backward_conv1d(lish, delta_y, delta_xs, mp_out):
+    backward_data, _backward_weight = get_grad_fn(lish)(lish, mp_out)
+    return [backward_data]
+
 def dl_backward_reshape(lish, delta_y, delta_xs, mp_out):
     return [r.reshape_like(mp_out, delta_xs[0])]
 
@@ -117,6 +124,46 @@ def dl_backward_adaptive_avg_pool2d(lish, delta_y, delta_xs, mp_out):
     mp_in = r.nn.avg_pool2d_grad(
         mp_out * delta_y, delta_x, **attrs
     ) / (delta_x + dl_eps)
+    mp_in = r.where(r.abs(delta_x) < dl_eps, pool_grad, mp_in)
+    return [mp_in]
+
+def dl_backward_adaptive_avg_pool1d(lish, delta_y, delta_xs, mp_out):
+    """Backward function for adaptive_avg_pool1d (used in IoT/tabular models)"""
+    delta_x = delta_xs[0]
+    # For adaptive_avg_pool1d: input (B, C, W) -> output (B, C, 1)
+    # Gradient is broadcast back and scaled by the pooling window size
+    
+    # Get input and output shapes
+    input_shape = get_shape(delta_x)
+    output_shape = get_shape(lish)
+    
+    # Calculate the pooling window size
+    if len(input_shape) == 3:  # (B, C, W)
+        isw = input_shape[2]
+        osw = output_shape[2] if len(output_shape) >= 3 else 1
+    elif len(input_shape) == 2:  # (B, W)
+        isw = input_shape[1]
+        osw = output_shape[1] if len(output_shape) >= 2 else 1
+    else:
+        raise NotImplementedError(f"Unsupported input shape for adaptive_avg_pool1d: {input_shape}")
+    
+    kernel_size = isw // osw if osw > 0 else isw
+    
+    # Standard gradient: broadcast output gradient to input shape and scale
+    # For adaptive_avg_pool1d: output (B, C, 1) -> input (B, C, W)
+    # Use broadcast_to with shape tuple (not constants)
+    pool_grad = r.broadcast_to(mp_out, tuple(input_shape))
+    if kernel_size > 1:
+        scale = r.const(1.0 / kernel_size, dtype='float32')
+        pool_grad = pool_grad * scale
+    
+    # DeepLIFT multiplier: similar but with delta_y scaling
+    mp_in = r.broadcast_to(mp_out * delta_y, tuple(input_shape))
+    if kernel_size > 1:
+        scale = r.const(1.0 / kernel_size, dtype='float32')
+        mp_in = mp_in * scale
+    mp_in = mp_in / (delta_x + dl_eps)
+    
     mp_in = r.where(r.abs(delta_x) < dl_eps, pool_grad, mp_in)
     return [mp_in]
 
@@ -166,6 +213,109 @@ def adaptive_avg_pool2d_grad(orig, grad):
         grad, data, **attrs
     )
     return [pool_grad]
+
+@r.op.register_gradient('nn.adaptive_avg_pool1d')
+def adaptive_avg_pool1d_grad(orig, grad):
+    """Gradient function for adaptive_avg_pool1d (used in IoT/tabular models)"""
+    data = orig.args[0]
+    input_shape = get_shape(data)
+    output_shape = get_shape(orig)
+    
+    # Calculate pooling window size
+    if len(input_shape) == 3:  # (B, C, W)
+        isw = input_shape[2]
+        osw = output_shape[2] if len(output_shape) >= 3 else 1
+    elif len(input_shape) == 2:  # (B, W)
+        isw = input_shape[1]
+        osw = output_shape[1] if len(output_shape) >= 2 else 1
+    else:
+        raise NotImplementedError(f"Unsupported shape for adaptive_avg_pool1d grad: {input_shape}")
+    
+    kernel_size = isw // osw if osw > 0 else isw
+    
+    # Broadcast gradient back to input shape
+    # For adaptive_avg_pool1d: output (B, C, 1) -> input (B, C, W)
+    # Use broadcast_to with shape tuple (not constants)
+    pool_grad = r.broadcast_to(grad, tuple(input_shape))
+    
+    # Scale by the pooling window size (average pooling divides by kernel_size)
+    if kernel_size > 1:
+        scale = r.const(1.0 / kernel_size, dtype='float32')
+        pool_grad = pool_grad * scale
+    
+    return [pool_grad]
+
+@r.op.register_gradient('nn.max_pool1d')
+def max_pool1d_grad(orig, grad):
+    """Gradient function for max_pool1d (approximate fallback for DIG instrumentation)."""
+    data = orig.args[0]
+    # TVM may not provide max_pool1d_grad; approximate by routing grad to inputs
+    return [r.reshape_like(grad, data)]
+
+@r.op.register_gradient('nn.avg_pool1d')
+def avg_pool1d_grad(orig, grad):
+    """Gradient function for avg_pool1d (fallback)."""
+    data = orig.args[0]
+    input_shape = get_shape(data)
+    output_shape = get_shape(orig)
+
+    if len(input_shape) == 3:
+        isw = input_shape[2]
+        osw = output_shape[2] if len(output_shape) >= 3 else 1
+    elif len(input_shape) == 2:
+        isw = input_shape[1]
+        osw = output_shape[1] if len(output_shape) >= 2 else 1
+    else:
+        raise NotImplementedError(f"Unsupported shape for avg_pool1d grad: {input_shape}")
+
+    kernel_size = isw // osw if osw > 0 else isw
+
+    pool_grad = r.reshape_like(grad, data)
+    if kernel_size > 1:
+        scale = r.const(1.0 / kernel_size, dtype='float32')
+        pool_grad = pool_grad * scale
+
+    return [pool_grad]
+
+@r.op.register_gradient('nn.conv1d')
+def conv1d_grad_override(orig, grad):
+    """Gradient override for nn.conv1d to ensure DIG support for 1D convolutions."""
+    data = orig.args[0]
+    weight = orig.args[1]
+
+    attrs = orig.attrs
+    strides = tuple(attrs.strides)
+    padding = tuple(attrs.padding)
+    dilation = tuple(attrs.dilation)
+    groups = attrs.groups
+
+    data_shape = get_shape(data)
+    weight_shape = get_shape(weight)
+    channels = data_shape[1]
+    kernel_size = (weight_shape[2],)
+
+    grad_data = r.nn.conv1d_transpose(
+        grad,
+        weight,
+        strides=strides,
+        padding=padding,
+        dilation=dilation,
+        output_padding=(0,),
+        groups=groups,
+        channels=channels,
+        kernel_size=kernel_size,
+    )
+
+    zero = r.const(0.0, dtype=get_dtype(weight))
+    grad_weight = weight * zero
+
+    grads = [grad_data, grad_weight]
+
+    if len(orig.args) == 3:
+        grad_bias = r.sum(grad, axis=[0, 2], keepdims=False)
+        grads.append(grad_bias)
+
+    return grads
 
 # Override and make compatible with QNN
 def bias_add_grad(orig, grad):

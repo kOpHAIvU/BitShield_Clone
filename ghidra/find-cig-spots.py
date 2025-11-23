@@ -66,7 +66,8 @@ def find_cig_spots():
         }'''
 
     cig_spots = []
-    for f in utils.currentProgram().getFunctionManager().getFunctions(True):
+    prog = utils.get_current_program()
+    for f in prog.getFunctionManager().getFunctions(True):
         cig_spots.extend(find_cig_spots_in_fn(f))
 
     return cig_spots

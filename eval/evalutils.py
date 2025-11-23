@@ -249,18 +249,35 @@ def get_sus_score_range(bi: utils.BinaryInfo, extend_coeff=0.3, use_cache=True, 
 
 def check_so_acc(fpath, input_name='input0', topn=1, split='test', n_per_class=None):
     bi = utils.BinaryInfo.from_fname(os.path.basename(fpath))
-    if n_per_class is None:
-        n_per_class = bi.fast_n_per_class
-    if n_per_class:
-        loader = dataman.get_sampling_loader_v2(
-            bi.dataset, bi.input_img_size, split, cfg.batch_size, n_per_class=n_per_class
-        )
+    
+    # Check if this is a tabular dataset
+    tabular_datasets = {'IoTID20', 'WUSTL', 'CICIoT2023'}
+    if bi.dataset in tabular_datasets:
+        # Use extended data manager for tabular datasets
+        try:
+            from support.dataman_extended import get_benign_loader_extended
+            loader = get_benign_loader_extended(
+                bi.dataset, bi.input_img_size, split, cfg.batch_size, shuffle=False, num_workers=0
+            )
+        except Exception as e:
+            print(f"Warning: Could not load tabular dataset {bi.dataset}: {e}")
+            print("Skipping accuracy check for tabular dataset")
+            return 0.0  # Return 0 to skip check
     else:
-        loader = dataman.get_benign_loader(
-            bi.dataset, bi.input_img_size, split, cfg.batch_size
-        )
+        # Use standard data manager for image datasets
+        if n_per_class is None:
+            n_per_class = bi.fast_n_per_class
+        if n_per_class:
+            loader = dataman.get_sampling_loader_v2(
+                bi.dataset, bi.input_img_size, split, cfg.batch_size, n_per_class=n_per_class
+            )
+        else:
+            loader = dataman.get_benign_loader(
+                bi.dataset, bi.input_img_size, split, cfg.batch_size
+            )
+    
     if bi.compiler == 'tvm':
-        rtmod = modman.load_module(fpath)
+        rtmod = modman.load_built_model(bi, fpath)
         return check_accuracy(rtmod, loader, nclasses=bi.nclasses, input_name=input_name, topn=topn)
     elif bi.compiler == 'glow':
         # Since we also need to infer path to weights
@@ -272,7 +289,24 @@ def check_so_acc(fpath, input_name='input0', topn=1, split='test', n_per_class=N
 
 def benchmark_perf(fpath):
     bi = utils.BinaryInfo.from_fname(os.path.basename(fpath))
-    input_data = np.random.randn(*bi.input_shape)
+    
+    # Check if this is a tabular dataset
+    tabular_datasets = {'IoTID20', 'WUSTL', 'CICIoT2023'}
+    if bi.dataset in tabular_datasets:
+        # For tabular datasets, get input_size from dataset info
+        try:
+            from support.dataman_extended import get_dataset_info
+            input_size, _ = get_dataset_info(bi.dataset)
+            input_shape = (bi.batch_size, input_size)
+        except Exception as e:
+            print(f"Warning: Could not get dataset info for {bi.dataset}: {e}")
+            # Fallback: use a reasonable default (IoTID20 has 69 features)
+            input_shape = (bi.batch_size, 69)
+    else:
+        # For image datasets, use standard input_shape
+        input_shape = bi.input_shape
+    
+    input_data = np.random.randn(*input_shape).astype('float32')
     if bi.compiler == 'tvm':
         rtmod = modman.load_module(fpath)
         _, _, infer_perf = modman.run_module(rtmod, input_data, output_defs=bi.output_defs, benchmark=True)

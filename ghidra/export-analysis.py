@@ -5,7 +5,15 @@ import os
 import struct
 import utils
 
-outfile = f'./ghidra/analysis/{utils.currentProgram().getName()}-analysis.json'
+# Get script directory and construct output path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+analysis_dir = os.path.join(project_root, 'ghidra', 'analysis')
+
+# Get current program name (works in both GUI and headless)
+prog = utils.get_current_program()
+
+outfile = os.path.join(analysis_dir, '{}-analysis.json'.format(prog.getName()))
 
 def export_fn(f):
     return {
@@ -45,24 +53,34 @@ def export_dev_mblob_info():
     sym = getSymbol('__tvm_dev_mblob', None)
     if not sym:
         return None
+    addr = sym.getAddress()
+    raw = utils.get_bytes(addr, 8)
+    if len(raw) != 8:
+        # If we cannot read header properly, skip dev mblob info
+        print('Warning: Unable to read __tvm_dev_mblob header, skipping dev_mblob info')
+        return None
+    header = struct.unpack('<Q', bytearray(raw))[0]
     return {
-        'base10_offset': sym.getAddress().getOffset(),
-        'header_nbytes': 8,  # The header consists of a 64-bit body length
-        'body_nbytes': struct.unpack('<Q', bytes(utils.get_bytes(sym.getAddress(), 8)))[0]
+        'base10_offset': addr.getOffset(),
+        'header_nbytes': 8,
+        'body_nbytes': header,
     }
 
 def export_analysis():
     utils.ensure_dir_of(outfile)
 
+    # Get current program - try multiple ways
+    prog = utils.get_current_program()
+
     ret = {
         'memory_map': export_memory_map(),
         'dev_mblob': export_dev_mblob_info(),
         'fns': {
-            f.getName(): export_fn(f) for f in utils.currentProgram().getFunctionManager().getFunctions(True)
+            f.getName(): export_fn(f) for f in prog.getFunctionManager().getFunctions(True)
         }
     }
 
     utils.save_json(ret, outfile)
-    print(f'Output written to {os.path.abspath(outfile)}')
+    print('Output written to {}'.format(os.path.abspath(outfile)))
 
 export_analysis()

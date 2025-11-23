@@ -157,6 +157,22 @@ def load_sweep_result(fname):
         return ret
 
 def get_val_loader(bi, fast, mc_nsamples):
+    # Check if this is a tabular dataset
+    tabular_datasets = {'IoTID20', 'WUSTL', 'CICIoT2023'}
+    if bi.dataset in tabular_datasets:
+        # Use extended data manager for tabular datasets
+        from support.dataman_extended import get_benign_loader_extended
+        if fast:
+            # For fast mode, use a subset
+            loader = get_benign_loader_extended(bi.dataset, bi.input_img_size, 'test', cfg.batch_size, shuffle=False, num_workers=0)
+            # Limit to fast_n_per_class samples per class if needed
+            # Note: get_benign_loader_extended doesn't support n_per_class directly,
+            # so we'll use the full loader for now
+            return loader
+        else:
+            return get_benign_loader_extended(bi.dataset, bi.input_img_size, 'test', cfg.batch_size, shuffle=False, num_workers=0)
+    
+    # Image datasets - use standard dataman
     if mc_nsamples:
         return dataman.get_monte_carlo_loader(bi.dataset, bi.input_img_size, 'test', cfg.batch_size, n=mc_nsamples, num_workers=0)
     elif fast:

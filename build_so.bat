@@ -7,8 +7,8 @@ setlocal enabledelayedexpansion
 REM Default values
 set COMPILER=tvm
 set COMPILER_VER=main
-set MODEL=resnet50
-set DATASET=CIFAR10
+set MODEL=ResNetSEBlockIoT
+set DATASET=IoTID20
 set CIG=ncnp
 set DIG=nd
 set AVX=true
@@ -127,10 +127,10 @@ echo.
 echo Options:
 echo   -c, --compiler COMPILER      Compiler to use (tvm, glow, nnfusion) [default: tvm]
 echo   -v, --compiler-ver VERSION    Compiler version [default: main]
-echo   -m, --model MODEL             Model name (resnet50, googlenet, densenet121) [default: resnet50]
-echo   -d, --dataset DATASET         Dataset name (CIFAR10, MNISTC, FashionC) [default: CIFAR10]
+echo   -m, --model MODEL             Model name (ResNetSEBlockIoT, SimpleCNNIoT, PureCNN, EfficientCNN) [default: ResNetSEBlockIoT]
+echo   -d, --dataset DATASET         Dataset name (IoTID20, WUSTL, CICIoT2023) [default: IoTID20]
 echo   -i, --cig CIG                 CIG mode (nc, ncnp, cc1, cc2) [default: ncnp]
-echo   -I, --dig DIG                 DIG mode (nd, gn1, gn2, gninf) [default: nd]
+echo   -I, --dig DIG                 DIG mode (nd, gn1, gn2, gninf, id, rb, cb) [default: nd]
 echo   -X, --no-avx                  Disable AVX optimization
 echo   -O, --opt-level LEVEL         Optimization level (0-3) [default: 3]
 echo   -A, --check-acc               Check accuracy after build
@@ -138,8 +138,10 @@ echo   -f, --force                   Force rebuild even if file exists
 echo   -h, --help                    Show this help message
 echo.
 echo Examples:
-echo   build_so.bat -m resnet50 -d CIFAR10 -I nd
-echo   build_so.bat -m resnet50 -d CIFAR10 -I gn1 -f
+echo   build_so.bat -m ResNetSEBlockIoT -d IoTID20 -I nd
+echo   build_so.bat -m ResNetSEBlockIoT -d IoTID20 -I gn1 -f
+echo   build_so.bat -m SimpleCNNIoT -d WUSTL -I nd
+echo   build_so.bat -m PureCNN -d CICIoT2023 -I gn1
 goto end
 
 :end

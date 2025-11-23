@@ -68,7 +68,17 @@ class WrappedRtMod:
         rtmod.run()
 
         def get_pred():
-            return rtmod.get_output(0, self.output_bufs[0]).numpy()[:data.shape[0]]
+            try:
+                return rtmod.get_output(0, self.output_bufs[0]).numpy()[:data.shape[0]]
+            except Exception as e:
+                # If output buffer shape doesn't match, try to get output without buffer
+                # and create a new buffer with correct shape
+                actual_output = rtmod.get_output(0).numpy()
+                actual_shape = actual_output.shape
+                # Update output_defs and recreate buffer
+                self.output_defs[0]['shape'] = list(actual_shape)
+                self.output_bufs[0] = tvm.nd.empty(**self.output_defs[0])
+                return rtmod.get_output(0, self.output_bufs[0]).numpy()[:data.shape[0]]
 
         def get_cov():
             return [rtmod.get_output(i+1, buf).numpy()
@@ -178,10 +188,65 @@ def create_gemod(gefmod, debug=False, debug_dump_root=None):
 def get_torch_mod(model_name, dataset):
     if dataset in {'ImageNet'}:
         model_class = getattr(torchvision.models, model_name)
+        torch_model = model_class(pretrained=False)
     else:
         model_class = getattr(models, model_name)
-
-    torch_model = model_class(pretrained=False)
+        
+        # Check if this is a tabular dataset that requires input_size and output_size
+        tabular_datasets = {'IoTID20', 'WUSTL', 'CICIoT2023'}
+        if dataset in tabular_datasets:
+            # Get dataset info (input_size, num_classes)
+            try:
+                from support.dataman_extended import get_dataset_info
+                input_size, num_classes = get_dataset_info(dataset)
+                torch_model = model_class(input_size=input_size, output_size=num_classes)
+            except Exception as e:
+                # Fallback: try to infer from state dict or use defaults
+                print(f"Warning: Could not get dataset info for {dataset}: {e}")
+                print(f"Attempting to use default values or infer from model file...")
+                # Try to load model file first to infer dimensions
+                model_path = f'{cfg.models_dir}/{dataset}/{model_name}/{model_name}.pt'
+                if os.path.exists(model_path):
+                    state_dict = torch.load(model_path, map_location=torch.device('cpu'))
+                    if 'state_dict' in state_dict:
+                        state_dict = state_dict['state_dict']
+                    # Try to infer input_size from first layer
+                    first_key = next(iter(state_dict.keys()))
+                    if 'fc1' in state_dict or 'classifier' in state_dict:
+                        # Try to get input size from first layer weight
+                        fc_key = 'fc1.weight' if 'fc1.weight' in state_dict else 'classifier.0.weight'
+                        if fc_key in state_dict:
+                            input_size = state_dict[fc_key].shape[1]
+                        else:
+                            input_size = 69  # Default for IoTID20
+                    else:
+                        input_size = 69  # Default for IoTID20
+                    
+                    # Try to infer num_classes from last layer
+                    if 'classifier' in state_dict:
+                        classifier_key = 'classifier.weight' if 'classifier.weight' in state_dict else None
+                        if classifier_key and classifier_key in state_dict:
+                            num_classes = state_dict[classifier_key].shape[0]
+                        else:
+                            num_classes = 5  # Default for IoTID20
+                    else:
+                        num_classes = 5  # Default for IoTID20
+                    
+                    torch_model = model_class(input_size=input_size, output_size=num_classes)
+                else:
+                    # Last resort: use defaults
+                    if dataset == 'IoTID20':
+                        torch_model = model_class(input_size=69, output_size=5)
+                    elif dataset == 'WUSTL':
+                        torch_model = model_class(input_size=42, output_size=5) 
+                    elif dataset == 'CICIoT2023':
+                        torch_model = model_class(input_size=39, output_size=34) 
+                    else:
+                        raise ValueError(f"Cannot determine model parameters for dataset: {dataset}")
+        else:
+            # For other datasets (image datasets), use pretrained=False
+            torch_model = model_class(pretrained=False)
+    
     torch_model.eval()
 
     model_path = f'{cfg.models_dir}/{dataset}/{model_name}/{model_name}.pt'
@@ -250,7 +315,25 @@ def get_irmod(
     Used for range building."""
 
     input_name = "input0"
-    input_shape = (batch_size, nchannels, image_size, image_size)
+    
+    # Check if this is a tabular dataset (IoT models)
+    tabular_datasets = {'IoTID20', 'WUSTL', 'CICIoT2023'}
+    if dataset in tabular_datasets:
+        # For tabular data, get input_size from dataset info
+        try:
+            from support.dataman_extended import get_dataset_info
+            input_size, _ = get_dataset_info(dataset)
+            # Tabular models expect [batch_size, input_size] or [batch_size, 1, input_size]
+            # Based on model implementation, most expect [batch_size, input_size]
+            input_shape = (batch_size, input_size)
+        except Exception as e:
+            print(f"Warning: Could not get dataset info for {dataset}: {e}")
+            # Fallback: use image_size as input_size (may be set incorrectly)
+            input_shape = (batch_size, image_size)
+    else:
+        # For image datasets, use standard shape
+        input_shape = (batch_size, nchannels, image_size, image_size)
+    
     if model_name.startswith('Q'):
         fname = f'{cfg.models_dir}/{dataset}/{model_name}/{model_name}-{batch_size}.onnx'
         if not os.path.exists(fname):

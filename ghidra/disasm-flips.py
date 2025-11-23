@@ -24,7 +24,8 @@ class DisasmInfo(NamedTuple):
     after: List[str]
 
 # getDisassembler(Program program, boolean markBadInstructions, boolean markUnimplementedPcode, boolean restrictToExecuteMemory, TaskMonitor monitor, DisassemblerMessageListener listener)
-disasm = Disassembler.getDisassembler(utils.currentProgram(), False, False, False, utils.DUMMY_MONITOR, None)
+prog = utils.get_current_program()
+disasm = Disassembler.getDisassembler(prog, False, False, False, utils.DUMMY_MONITOR, None)
 
 def flip_and_disasm(offset, bitidx, first_addr, last_addr, complete_rest=False) -> List[Instruction]:
     byte_addr = toAddr(offset)

@@ -48,6 +48,23 @@ class BinaryInfo(NamedTuple):
 
     @property
     def nclasses(self):
+        # Check if this is a tabular dataset first
+        tabular_datasets = {'IoTID20', 'WUSTL', 'CICIoT2023'}
+        if self.dataset in tabular_datasets:
+            try:
+                from support.dataman_extended import get_dataset_info
+                _, num_classes = get_dataset_info(self.dataset)
+                return num_classes
+            except Exception:
+                # Fallback to defaults if import fails
+                defaults = {
+                    'IoTID20': 5,
+                    'WUSTL': 10,
+                    'CICIoT2023': 10,
+                }
+                return defaults.get(self.dataset, 10)
+        
+        # Image datasets
         return {
             'CIFAR10': 10,
             'MNIST': 10,

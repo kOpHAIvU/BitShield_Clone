@@ -6,7 +6,8 @@
 import utils
 import subprocess
 
-init_block = list(filter(lambda x: x.getName() == '.init', utils.currentProgram().getMemory().getBlocks()))[0]
+prog = utils.get_current_program()
+init_block = list(filter(lambda x: x.getName() == '.init', prog.getMemory().getBlocks()))[0]
 assert init_block
 
 init_addr = init_block.getStart().getOffset()

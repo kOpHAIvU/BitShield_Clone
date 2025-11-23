@@ -289,6 +289,103 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu'):
     
     return attack_results
 
+def attack_without_defense(model_name, dataset_name, device='cpu'):
+    """Attack simulation without any defense (baseline)"""
+    print(f"Running attack simulation WITHOUT defense (baseline) for {model_name} on {dataset_name}...")
+    
+    # Load model
+    model = load_model(model_name, dataset_name, device)
+    if model is None:
+        return
+    
+    # Load test data
+    test_loader = get_benign_loader_extended(dataset_name, 32, 'test', batch_size=100)
+    
+    # Get original accuracy
+    correct = 0
+    total = 0
+    
+    with torch.no_grad():
+        for x, y in tqdm(test_loader, desc="Testing original model"):
+            x, y = x.to(device), y.to(device)
+            y_pred = model(x)
+            _, predicted = torch.max(y_pred.data, 1)
+            total += y.size(0)
+            correct += (predicted == y).sum().item()
+    
+    original_accuracy = 100 * correct / total
+    print(f'Original accuracy: {original_accuracy:.2f}%')
+    
+    # Simulate attacks without any defense
+    print("Simulating attacks WITHOUT defense...")
+    
+    attack_results = {
+        'model': model_name,
+        'dataset': dataset_name,
+        'original_accuracy': original_accuracy,
+        'attack_results': []
+    }
+    
+    # Different attack strengths
+    attack_strengths = [0.1, 0.2, 0.5, 1.0]
+    
+    for strength in attack_strengths:
+        print(f"Testing attack with strength {strength}...")
+        
+        # Reload model for each attack (to avoid cumulative effects)
+        model = load_model(model_name, dataset_name, device)
+        if model is None:
+            continue
+        
+        # Apply attack to model parameters
+        with torch.no_grad():
+            for param in model.parameters():
+                noise = torch.randn_like(param) * strength
+                param.add_(noise)
+        
+        # Test accuracy after attack
+        correct = 0
+        total = 0
+        
+        with torch.no_grad():
+            for x, y in test_loader:
+                x, y = x.to(device), y.to(device)
+                y_pred = model(x)
+                _, predicted = torch.max(y_pred.data, 1)
+                total += y.size(0)
+                correct += (predicted == y).sum().item()
+        
+        accuracy_after = 100 * correct / total
+        
+        attack_results['attack_results'].append({
+            'strength': strength,
+            'accuracy_after': accuracy_after,
+            'accuracy_drop': original_accuracy - accuracy_after,
+            'detection_rate': 0.0  # No defense, so no detection
+        })
+        
+        print(f"  Accuracy after attack: {accuracy_after:.2f}%")
+        print(f"  Detection rate: 0.00% (no defense)")
+    
+    # Save results
+    output_dir = 'results/defense_results'
+    ensure_dir_of(output_dir)
+    output_file = os.path.join(output_dir, f'{dataset_name}_{model_name}_baseline_attack.json')
+    
+    with open(output_file, 'w') as f:
+        json.dump(attack_results, f, indent=2)
+    
+    print(f"Results saved to: {output_file}")
+    
+    # Print summary
+    print("\n=== Baseline (No Defense) Summary ===")
+    for result in attack_results['attack_results']:
+        print(f"Strength {result['strength']}: "
+              f"Accuracy drop {result['accuracy_drop']:.2f}%, "
+              f"Detection {result['detection_rate']:.2f}%")
+    
+    return attack_results
+
 def attack_with_combined_protection(model_name, dataset_name, device='cpu'):
     """Attack simulation with combined DIG + CIG protection"""
     print(f"Running attack simulation with combined DIG + CIG protection for {model_name} on {dataset_name}...")
@@ -349,7 +446,8 @@ def attack_with_combined_protection(model_name, dataset_name, device='cpu'):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('defense_type', choices=['dig', 'cig', 'combined'], help='Type of defense to test')
+    parser.add_argument('defense_type', choices=['dig', 'cig', 'combined', 'none', 'baseline'], 
+                       help='Type of defense to test (none/baseline = no defense)')
     parser.add_argument('model', type=str, help='Model name')
     parser.add_argument('dataset', type=str, choices=['IoTID20', 'WUSTL', 'CICIoT2023'], help='Dataset name')
     parser.add_argument('--device', type=str, default='cpu', help='Device to use')
@@ -361,3 +459,5 @@ if __name__ == '__main__':
         attack_with_cig_simulation(args.model, args.dataset, args.device)
     elif args.defense_type == 'combined':
         attack_with_combined_protection(args.model, args.dataset, args.device)
+    elif args.defense_type in ['none', 'baseline']:
+        attack_without_defense(args.model, args.dataset, args.device)

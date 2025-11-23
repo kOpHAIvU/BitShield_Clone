@@ -1,24 +1,58 @@
 import os
 import json
-from typing import List
-from inspect import isfunction
+import sys
+
 try:  # https://pypi.org/project/ghidra-stubs/
-    import ghidra.ghidra_builtins as builtins
-    from ghidra.ghidra_builtins import *
-except:
-    import builtins
+    import ghidra.ghidra_builtins  # noqa: F401
+    from ghidra.ghidra_builtins import *  # noqa: F401,F403
+except Exception:
+    # In Ghidra environment, functions are normally available in global namespace.
+    pass
+
 from ghidra.program.model.listing import Instruction
 from ghidra.util.task import TaskMonitor
 
 DUMMY_MONITOR = TaskMonitor.DUMMY
 
-# Ghidrathon v3.0.0 calling convention changes
-monitor = lambda: builtins.monitor() if isfunction(builtins.monitor) else builtins.monitor
-currentProgram = lambda: builtins.currentProgram() if isfunction(builtins.currentProgram) else builtins.currentProgram
-currentAddress = lambda: builtins.currentAddress() if isfunction(builtins.currentAddress) else builtins.currentAddress
-currentSelection = lambda: builtins.currentSelection() if isfunction(builtins.currentSelection) else builtins.currentSelection
-currentLocation = lambda: builtins.currentLocation() if isfunction(builtins.currentLocation) else builtins.currentLocation
-currentHighlight = lambda: builtins.currentHighlight() if isfunction(builtins.currentHighlight) else builtins.currentHighlight
+def _call_if_callable(obj):
+    try:
+        return obj() if callable(obj) else obj
+    except TypeError:
+        return obj
+
+def get_current_program():
+    """
+    Returns the current program in both Ghidra GUI and headless environments.
+    Handles cases where currentProgram is a callable or an object.
+    """
+    # 1. Check caller / __main__ namespace (most common in Ghidra scripts)
+    main_module = sys.modules.get('__main__')
+    main_ns = getattr(main_module, '__dict__', {}) if main_module else {}
+    for name in ('currentProgram', 'getCurrentProgram'):
+        if name in main_ns:
+            return _call_if_callable(main_ns[name])
+
+    # 2. Check utils module globals (if functions imported via ghidra_builtins)
+    module_globals = globals()
+    for name in ('currentProgram', 'getCurrentProgram'):
+        if name in module_globals:
+            return _call_if_callable(module_globals[name])
+
+    # 3. As a fallback, attempt to import from ghidra.ghidra_builtins
+    try:
+        from ghidra.ghidra_builtins import currentProgram as builtin_current_program
+        return _call_if_callable(builtin_current_program)
+    except Exception:
+        pass
+
+    # 4. Final fallback: try state variable provided by headless analyzer (if available)
+    if 'state' in main_ns:
+        try:
+            return main_ns['state'].getCurrentProgram()
+        except Exception:
+            pass
+
+    raise RuntimeError('Unable to determine current program (currentProgram not available)')
 
 def ensure_dir_of(filepath):
     dirpath = os.path.dirname(filepath)
@@ -37,16 +71,17 @@ def save_json(obj, filepath):
 
 def maybe_do(outfile, work_fn):
     if os.path.exists(outfile):
-        print(f'Output file {os.path.abspath(outfile)} already exists, skipping')
+        print('Output file {} already exists, skipping'.format(os.path.abspath(outfile)))
         return
 
     ensure_dir_of(outfile)
     ret = work_fn()
     save_json(ret, outfile)
-    print(f'Output written to {os.path.abspath(outfile)}')
+    print('Output written to {}'.format(os.path.abspath(outfile)))
 
 def get_compute_fns():
-    all_fns = list(currentProgram().getFunctionManager().getFunctions(True))
+    prog = get_current_program()
+    all_fns = list(prog.getFunctionManager().getFunctions(True))
     compute_fns = []
     for _i, f in enumerate(all_fns):
         if f.getName().endswith('_compute_'):  # TVM
@@ -59,29 +94,46 @@ def get_compute_fns():
             compute_fns.append(f)
     return compute_fns
 
-def get_insts_in_range(first_addr, last_addr) -> List[Instruction]:
+def get_insts_in_range(first_addr, last_addr):
+    prog = get_current_program()
+    listing = prog.getListing()
     ret = []
-    inst = getInstructionAt(first_addr)
+    inst = listing.getInstructionAt(first_addr)
     while inst and inst.getMinAddress() <= last_addr:
         ret.append(inst)
-        inst = inst.getNext()
+        inst = listing.getInstructionAfter(inst.getMinAddress())
     return ret
 
-def get_insts_in_fn(f) -> List[Instruction]:
+def get_insts_in_fn(f):
     # Functions are not always continuous
     ret = []
     for block in f.getBody():
         ret.extend(get_insts_in_range(block.getMinAddress(), block.getMaxAddress()))
     return ret
 
+def _get_memory():
+    return get_current_program().getMemory()
+
 def get_byte(addr):
-    return getByte(addr) & 0xff
+    mem = _get_memory()
+    return mem.getByte(addr) & 0xff
 
 def get_bytes(addr, length):
-    return [x & 0xff for x in getBytes(addr, length)]
+    mem = _get_memory()
+    buf = bytearray(length)
+    read = mem.getBytes(addr, buf)
+    if read == -1:
+        # Older Ghidra versions return -1; data placed in buf
+        read = length
+    elif read is None:
+        read = length
+    if read < len(buf):
+        buf = buf[:read]
+    return [b & 0xff for b in buf]
 
 def set_byte(addr, byte):
-    setByte(addr, p2jb(byte))
+    mem = _get_memory()
+    mem.setByte(addr, p2jb(byte))
 
 def j2pb(x):
     '''Converts Java (signed) byte to Python (unsigned) byte'''
@@ -92,4 +144,4 @@ def p2jb(x):
     return x if x < 128 else x - 256
 
 def friendly_hex(x):
-    return '_'.join([f'{j2pb(x):02x}' for x in x])
+    return '_'.join(['{:02x}'.format(j2pb(x)) for x in x])
