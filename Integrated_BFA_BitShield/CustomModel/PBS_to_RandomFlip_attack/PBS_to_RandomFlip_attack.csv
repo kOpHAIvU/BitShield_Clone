@@ -1,0 +1,26 @@
+Bit Counter,Module,Weight Before Attack,Weight After Attack,MCC,MCC Drop,ACC,ACC Drop,TPR,TPR Drop,F1-score,F1-score Drop
+2,stage_1.12.conv_a,"tensor(32., device='cuda:0')","tensor(32., device='cuda:0')",0.02841,0.71769,0.01719,0.74538,0.05194,0.64761,0.02847,0.65516
+4,stage_3.0.conv_b,"tensor(-2., device='cuda:0')","tensor(-2., device='cuda:0')",0.01774,0.01067,0.02087,-0.00369,0.06344,-0.0115,0.02464,0.00384
+6,stage_2.7.conv_a,"tensor(-2., device='cuda:0')","tensor(-2., device='cuda:0')",0.02603,-0.0083,0.01353,0.00734,0.03225,0.03119,0.02005,0.00459
+8,stage_1.3.conv_b,"tensor(127., device='cuda:0')","tensor(127., device='cuda:0')",0.02646,-0.00042,0.01478,-0.00125,0.04302,-0.01077,0.01972,0.00033
+10,stage_2.6.conv_b,"tensor(-17., device='cuda:0')","tensor(-17., device='cuda:0')",0.04142,-0.01497,0.02024,-0.00546,0.04611,-0.00309,0.02513,-0.00541
+12,stage_1.10.conv_b,"tensor(-3., device='cuda:0')","tensor(-3., device='cuda:0')",0.02581,0.01561,0.01454,0.0057,0.04285,0.00326,0.01943,0.00571
+14,stage_1.4.conv_b,"tensor(1., device='cuda:0')","tensor(1., device='cuda:0')",0.03354,-0.00772,0.01533,-0.00079,0.04334,-0.00049,0.02008,-0.00065
+16,stage_2.14.conv_b,"tensor(-3., device='cuda:0')","tensor(-3., device='cuda:0')",0.02549,0.00804,0.01438,0.00095,0.04258,0.00076,0.019,0.00108
+18,stage_3.4.conv_a,"tensor(-33., device='cuda:0')","tensor(-33., device='cuda:0')",0.02476,0.00074,0.0141,0.00028,0.04245,0.00013,0.0187,0.0003
+20,stage_3.4.conv_b,"tensor(-9., device='cuda:0')","tensor(-9., device='cuda:0')",0.02474,2e-05,0.01409,1e-05,0.04235,0.0001,0.0186,0.00011
+22,stage_2.3.conv_a,"tensor(64., device='cuda:0')","tensor(64., device='cuda:0')",0.02413,0.00061,0.01385,0.00024,0.04229,7e-05,0.01842,0.00018
+24,stage_2.9.conv_a,"tensor(-9., device='cuda:0')","tensor(-9., device='cuda:0')",0.02413,0.0,0.01385,0.0,0.04229,0.0,0.01842,0.0
+26,stage_3.15.conv_a,"tensor(-3., device='cuda:0')","tensor(-3., device='cuda:0')",0.01908,0.00505,0.01744,-0.00359,0.05448,-0.0122,0.019,-0.00059
+28,stage_3.11.conv_a,"tensor(-9., device='cuda:0')","tensor(-9., device='cuda:0')",0.02738,-0.0083,0.01837,-0.00093,0.05498,-0.0005,0.01905,-5e-05
+30,stage_3.6.conv_a,"tensor(-128., device='cuda:0')","tensor(-128., device='cuda:0')",0.0192,0.00818,0.01747,0.0009,0.05455,0.00043,0.01909,-5e-05
+32,stage_3.15.conv_b,"tensor(8., device='cuda:0')","tensor(8., device='cuda:0')",0.01241,0.00679,0.01011,0.00736,0.0425,0.01206,0.00432,0.01477
+34,stage_3.6.conv_a,"tensor(16., device='cuda:0')","tensor(16., device='cuda:0')",0.01925,-0.00684,0.01749,-0.00738,0.05439,-0.0119,0.01904,-0.01472
+36,stage_1.12.conv_b,"tensor(-17., device='cuda:0')","tensor(-17., device='cuda:0')",0.02565,-0.0064,0.01821,-0.00072,0.05478,-0.00038,0.01962,-0.00058
+38,stage_3.12.conv_b,"tensor(16., device='cuda:0')","tensor(16., device='cuda:0')",0.01908,0.00657,0.01746,0.00075,0.05444,0.00034,0.01905,0.00058
+40,stage_1.12.conv_b,"tensor(-2., device='cuda:0')","tensor(-2., device='cuda:0')",0.0191,-2e-05,0.01744,2e-05,0.05402,0.00041,0.01869,0.00036
+42,stage_1.13.conv_b,"tensor(-3., device='cuda:0')","tensor(-3., device='cuda:0')",0.01912,-2e-05,0.01744,0.0,0.05402,0.0,0.01866,3e-05
+44,stage_2.7.conv_b,"tensor(16., device='cuda:0')","tensor(16., device='cuda:0')",0.0354,-0.01627,0.0223,-0.00485,0.05659,-0.00257,0.02135,-0.0027
+46,stage_2.13.conv_a,"tensor(-9., device='cuda:0')","tensor(-9., device='cuda:0')",0.01912,0.01628,0.01748,0.00482,0.05407,0.00253,0.01873,0.00263
+48,stage_2.13.conv_b,"tensor(1., device='cuda:0')","tensor(1., device='cuda:0')",0.02493,-0.00582,0.01585,0.00163,0.04565,0.00842,0.00946,0.00927
+50,stage_3.4.conv_b,"tensor(16., device='cuda:0')","tensor(16., device='cuda:0')",0.06322,-0.03829,0.01897,-0.00313,0.04735,-0.0017,0.01218,-0.00272

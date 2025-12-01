@@ -59,8 +59,9 @@ class BinaryInfo(NamedTuple):
                 # Fallback to defaults if import fails
                 defaults = {
                     'IoTID20': 5,
-                    'WUSTL': 10,
-                    'CICIoT2023': 10,
+                    'WUSTL': 5,
+                    'CICIoT2023': 34,
+
                 }
                 return defaults.get(self.dataset, 10)
         
