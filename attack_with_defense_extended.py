@@ -350,8 +350,18 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
                 info = _random_flip_one_bit(model)
             print(f"Iteration {i+1}/{attack_iters}: applied {attack_mode} step -> {info}")
             # Evaluate after each iteration
+            obfus_alert = None
+            obfus_reseed = None
             if obfus_runtime is not None:
-                obfus_runtime.periodic_check(i + 1)
+                obfus_ret = obfus_runtime.periodic_check(i + 1)
+                sig_alert = obfus_ret.get('sig', {}).get('alert', 0)
+                fp_alert = obfus_ret.get('fp', {}).get('alert', 0)
+                ctrl_action = obfus_ret.get('ctrl', {}).get('action', 'none')
+                if sig_alert or fp_alert or ctrl_action != 'none':
+                    obfus_alert = f"SIG={sig_alert}, FP={fp_alert}, Action={ctrl_action}"
+                    if ctrl_action == 'reseed':
+                        obfus_reseed = True
+                    print(f"  [OBFUS-SIG] Alert detected: {obfus_alert}")
             acc_i, det_i, det_cnt_i, total_i = _evaluate_with_dig(protected_model, test_loader, sus_score_range, device)
             # Extract flip details if present
             module_name = info.get('module') if isinstance(info, dict) else None
@@ -377,6 +387,8 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
                 f"{det_i:.4f}",
                 det_cnt_i,
                 total_i,
+                obfus_alert if obfus_alert else '',
+                'yes' if obfus_reseed else 'no',
             ])
         # Save per-iteration CSV
         output_dir = 'results/defense_results'
@@ -386,7 +398,8 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
             writer = csv.writer(f)
             writer.writerow([
                 'iteration','mode','module','old_val','new_val','elem_idx','bit_idx',
-                'accuracy_after_iter','dig_detection_rate_iter','samples_detected','samples_processed'
+                'accuracy_after_iter','dig_detection_rate_iter','samples_detected','samples_processed',
+                'obfus_sig_alert','obfus_reseed'
             ])
             writer.writerows(iter_logs)
         print(f"Per-iteration log saved to: {csv_path}")
