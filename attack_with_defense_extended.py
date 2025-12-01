@@ -20,6 +20,7 @@ from support import torchdig
 from support import torchdig_tabular
 from support.dataman_extended import get_benign_loader_extended, get_dataset_info
 from support.models.quantized_layers import quan_Conv1d, quan_Linear, CustomBlock
+from support.obfus_sig import ObfusSigRuntime
 
 def ensure_dir_of(filepath):
     dirpath = os.path.dirname(filepath)
@@ -218,6 +219,27 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
     # Load test data
     test_loader = get_benign_loader_extended(dataset_name, 32, 'test', batch_size=100)
     train_loader = get_benign_loader_extended(dataset_name, 32, 'train', batch_size=100)
+    # Prepare ObfusSig runtime if enabled (configured via CLI globals)
+    obfus_runtime = None
+    if getattr(attack_with_dig_protection, "_obfus_sig_cfg", None) is not None:
+        cfg_os = attack_with_dig_protection._obfus_sig_cfg
+        print("[OBFUS-SIG] Enabled with config:", cfg_os)
+        # Use a small probe loader (reuse train loader)
+        obfus_runtime = ObfusSigRuntime(
+            model=model,
+            probe_loader=train_loader,
+            alert_mode=cfg_os.get("alert_mode", "or"),
+            sig_period=cfg_os.get("sig_period", 500),
+            sig_k=cfg_os.get("sig_k", 3.0),
+            fp_threshold=cfg_os.get("fp_threshold", 0.1),
+            fp_entropy_threshold=cfg_os.get("fp_entropy_threshold", 0.15),
+            grad_norm_type=cfg_os.get("grad_norm_type", "l1"),
+            normalize_grad=cfg_os.get("normalize_grad", True),
+            make_shadow=cfg_os.get("make_shadow", False),
+            device=device,
+        )
+        cal_stats = obfus_runtime.calibrate(sig_steps=50)
+        print("[OBFUS-SIG] Calibrated:", cal_stats)
     
     # Use Tabular DIG for tabular datasets
     if dataset_name in ['IoTID20', 'WUSTL', 'CICIoT2023']:
@@ -240,6 +262,9 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
     with torch.no_grad():
         for x, y in tqdm(test_loader, desc="Testing original model"):
             x, y = x.to(device), y.to(device)
+                # periodic obfus-sig check
+                if obfus_runtime is not None:
+                    obfus_runtime.periodic_check(0)
             y_pred = protected_model(x)
             _, predicted = torch.max(y_pred.data, 1)
             total += y.size(0)
@@ -276,6 +301,8 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
             for x, y in test_loader:
                 x, y = x.to(device), y.to(device)
                 batch_size = x.size(0)
+                if obfus_runtime is not None:
+                    obfus_runtime.periodic_check(0)
                 x.requires_grad_(True)
                 try:
                     sus_score = protected_model.calc_sus_score(x).item()
@@ -323,6 +350,8 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
                 info = _random_flip_one_bit(model)
             print(f"Iteration {i+1}/{attack_iters}: applied {attack_mode} step -> {info}")
             # Evaluate after each iteration
+            if obfus_runtime is not None:
+                obfus_runtime.periodic_check(i + 1)
             acc_i, det_i, det_cnt_i, total_i = _evaluate_with_dig(protected_model, test_loader, sus_score_range, device)
             # Extract flip details if present
             module_name = info.get('module') if isinstance(info, dict) else None
@@ -370,6 +399,8 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
         for x, y in test_loader:
             x, y = x.to(device), y.to(device)
             batch_size = x.size(0)
+            if obfus_runtime is not None:
+                obfus_runtime.periodic_check(int(attack_iters) + 1)
             x.requires_grad_(True)
             try:
                 sus_score = protected_model.calc_sus_score(x).item()
@@ -702,7 +733,32 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default='cpu', help='Device to use')
     parser.add_argument('--attack-mode', type=str, default='noise', choices=['noise', 'pbs', 'random_flip', 'pbs_to_random', 'random_to_pbs'], help='Attack mode to simulate')
     parser.add_argument('--attack-iters', type=int, default=25, help='Number of attack iterations for bit-flip modes')
+    # OBFUS-SIG options
+    parser.add_argument('--obfus-sig', action='store_true', help='Enable OBFUS-SIG runtime (Obfuscation + SIG-Lite + Bit-FP)')
+    parser.add_argument('--sig-period', type=int, default=500, help='Probe period for SIG-Lite')
+    parser.add_argument('--sig-k', type=float, default=3.0, help='k in median±k·MAD thresholds')
+    parser.add_argument('--sig-grad', type=str, default='l1', choices=['l1','l2'], help='Gradient norm type for SIG-Lite')
+    parser.add_argument('--sig-norm', action='store_true', help='Normalize grad norm by num params')
+    parser.add_argument('--fp-threshold', type=float, default=0.1, help='PSI threshold for fingerprint drift')
+    parser.add_argument('--fp-entropy-th', type=float, default=0.15, help='Bit-plane entropy drift threshold')
+    parser.add_argument('--obfus-mode', type=str, default='or', choices=['or','and'], help='Alert fusion mode')
+    parser.add_argument('--obfus-shadow', action='store_true', help='Enable shadow model (not switched automatically by default)')
     args = parser.parse_args()
+    
+    # Inject OBFUS-SIG config if requested
+    if args.obfus_sig:
+        attack_with_dig_protection._obfus_sig_cfg = {
+            "alert_mode": args.obfus_mode,
+            "sig_period": args.sig_period,
+            "sig_k": args.sig_k,
+            "grad_norm_type": args.sig_grad,
+            "normalize_grad": bool(args.sig_norm),
+            "fp_threshold": args.fp_threshold,
+            "fp_entropy_threshold": args.fp_entropy_th,
+            "make_shadow": bool(args.obfus_shadow),
+        }
+    else:
+        attack_with_dig_protection._obfus_sig_cfg = None
     
     if args.defense_type == 'dig':
         attack_with_dig_protection(args.model, args.dataset, args.device, attack_mode=args.attack_mode, attack_iters=args.attack_iters)

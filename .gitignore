@@ -78,3 +78,5 @@ save
 !.dvc
 !dvc.lock
 !.merge_file_*
+PROJECT_FILES_README.md
+RUN_GUIDE.md
