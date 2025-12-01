@@ -82,7 +82,6 @@ class SigLiteMonitor:
             y = y.to(self.device)
         return x, y
 
-    @torch.no_grad()
     def _compute_probs(self, logits: torch.Tensor) -> torch.Tensor:
         return F.softmax(logits, dim=-1)
 
