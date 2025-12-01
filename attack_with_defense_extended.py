@@ -244,7 +244,9 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
     # Use Tabular DIG for tabular datasets
     if dataset_name in ['IoTID20', 'WUSTL', 'CICIoT2023']:
         print(f"Using Tabular DIG for {dataset_name} dataset...")
-        protected_model = torchdig_tabular.wrap_with_tabular_dig(model)
+        # Use OBFUS-wrapped model if available, otherwise use original model
+        model_for_dig = obfus_runtime.model if obfus_runtime is not None else model
+        protected_model = torchdig_tabular.wrap_with_tabular_dig(model_for_dig)
         protected_model.to(device)
         protected_model.eval()
         
@@ -329,6 +331,8 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
             print(f"  DIG detection rate: {detection_rate:.2f}%")
     else:
         # Realistic bit-flip attacks from notebooks
+        # Use OBFUS-wrapped model if available for bit-flip attacks
+        model_for_attack = obfus_runtime.model if obfus_runtime is not None else model
         # Prepare a calibration batch for PBS selection
         calib_batch = next(iter(train_loader))
         calib_x, calib_y = calib_batch[0].to(device), calib_batch[1].to(device)
@@ -337,17 +341,17 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
         iter_logs = []
         for i in range(int(attack_iters)):
             if attack_mode == 'pbs':
-                info = _progressive_bit_search(model, criterion, calib_x, calib_y, max_trials=16)
+                info = _progressive_bit_search(model_for_attack, criterion, calib_x, calib_y, max_trials=16)
             elif attack_mode == 'random_flip':
-                info = _random_flip_one_bit(model)
+                info = _random_flip_one_bit(model_for_attack)
             elif attack_mode == 'pbs_to_random':
-                _ = _progressive_bit_search(model, criterion, calib_x, calib_y, max_trials=16)
-                info = _random_flip_one_bit(model)
+                _ = _progressive_bit_search(model_for_attack, criterion, calib_x, calib_y, max_trials=16)
+                info = _random_flip_one_bit(model_for_attack)
             elif attack_mode == 'random_to_pbs':
-                _ = _random_flip_one_bit(model)
-                info = _progressive_bit_search(model, criterion, calib_x, calib_y, max_trials=16)
+                _ = _random_flip_one_bit(model_for_attack)
+                info = _progressive_bit_search(model_for_attack, criterion, calib_x, calib_y, max_trials=16)
             else:
-                info = _random_flip_one_bit(model)
+                info = _random_flip_one_bit(model_for_attack)
             print(f"Iteration {i+1}/{attack_iters}: applied {attack_mode} step -> {info}")
             # Evaluate after each iteration
             obfus_alert = None
