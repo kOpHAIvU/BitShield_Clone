@@ -262,9 +262,9 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
     with torch.no_grad():
         for x, y in tqdm(test_loader, desc="Testing original model"):
             x, y = x.to(device), y.to(device)
-                # periodic obfus-sig check
-                if obfus_runtime is not None:
-                    obfus_runtime.periodic_check(0)
+            # periodic obfus-sig check
+            if obfus_runtime is not None:
+                obfus_runtime.periodic_check(0)
             y_pred = protected_model(x)
             _, predicted = torch.max(y_pred.data, 1)
             total += y.size(0)
