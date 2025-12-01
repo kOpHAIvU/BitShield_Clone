@@ -12,10 +12,21 @@ def _median_and_mad(values: torch.Tensor) -> Tuple[float, float]:
     return med, mad
 
 
-def _find_last_linear(model: nn.Module) -> Optional[nn.Linear]:
-    last = None
+def _find_last_linear(model: nn.Module) -> Optional[nn.Module]:
+    """
+    Find the "head" layer we will monitor.
+    Prefer the last nn.Linear; if none exists, fall back to the last Conv1d/Conv2d.
+    """
+    last: Optional[nn.Module] = None
+    # First, try to find the last Linear layer
     for m in model.modules():
         if isinstance(m, nn.Linear):
+            last = m
+    if last is not None:
+        return last
+    # Fallback: use the last Conv layer as head (for fully-conv models)
+    for m in model.modules():
+        if isinstance(m, (nn.Conv1d, nn.Conv2d)):
             last = m
     return last
 
@@ -44,7 +55,7 @@ class SigLiteMonitor:
         self.device = device or next(model.parameters()).device
         self.last_layer = _find_last_linear(model)
         if self.last_layer is None:
-            raise ValueError("SigLiteMonitor requires a model with a final nn.Linear layer.")
+            raise ValueError("SigLiteMonitor requires a model with a final nn.Linear/Conv layer.")
         self._probe_iter = None
         # Baseline thresholds
         self.kl_med = None
