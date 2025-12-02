@@ -442,8 +442,22 @@ def train_model_extended(model_name, dataset_name, epochs=10, batch_size=256, de
         train_loss /= len(train_loader)
         train_acc = 100 * train_correct / train_total
         
-        # Validation phase
+        # Recalculate training loss in eval mode for fair comparison
+        # (This accounts for dropout/batch norm differences between train/eval modes)
         torch_model.eval()
+        train_loss_eval = 0.0
+        with torch.no_grad():
+            for x, y in train_loader:
+                x, y = x.to(device), y.to(device)
+                outputs = torch_model(x)
+                loss = criterion(outputs, y)
+                train_loss_eval += loss.item()
+        train_loss_eval /= len(train_loader)
+        
+        # Use eval mode training loss for comparison (more accurate)
+        train_loss = train_loss_eval
+        
+        # Validation phase
         val_loss = 0.0
         val_correct = 0
         val_total = 0
