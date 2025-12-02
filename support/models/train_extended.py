@@ -38,6 +38,21 @@ def calculate_class_weights(y_train, num_classes):
     class_weights = compute_class_weight('balanced', classes=np.arange(num_classes), y=y_train)
     return torch.FloatTensor(class_weights)
 
+def convert_to_json_serializable(obj):
+    """
+    Convert numpy arrays and other non-serializable objects to JSON-compatible types
+    """
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (np.integer, np.floating)):
+        return float(obj) if isinstance(obj, np.floating) else int(obj)
+    elif isinstance(obj, dict):
+        return {key: convert_to_json_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [convert_to_json_serializable(item) for item in obj]
+    else:
+        return obj
+
 def calculate_metrics(y_true, y_pred, num_classes):
     """Calculate comprehensive metrics"""
     y_true = np.array(y_true)
@@ -594,7 +609,7 @@ def train_model_extended(model_name, dataset_name, epochs=10, batch_size=256, de
     print("All visualization plots have been saved successfully!")
     print("="*60)
     
-    # Save results
+    # Save results (convert numpy arrays to lists for JSON serialization)
     results = {
         'model': model_name,
         'dataset': dataset_name,
@@ -606,6 +621,9 @@ def train_model_extended(model_name, dataset_name, epochs=10, batch_size=256, de
         'num_classes': num_classes,
         'training_history': history
     }
+    
+    # Convert all numpy arrays to JSON-serializable format
+    results = convert_to_json_serializable(results)
     
     results_file = os.path.join(model_dir, f'{model_name}_results.json')
     with open(results_file, 'w') as f:
