@@ -13,6 +13,10 @@ from support import models
 import numpy as np
 from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.utils.class_weight import compute_class_weight
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # Import IoTID20 data preprocessing
 try:
@@ -127,8 +131,158 @@ def calculate_metrics(y_true, y_pred, num_classes):
     
     mcc = mcc_numerator / mcc_denominator if mcc_denominator > 0 else 0
     metrics['MCC'] = mcc
+    metrics['Confusion_Matrix'] = cm
     
     return metrics
+
+def plot_training_history(history, save_dir, model_name, dataset_name):
+    """
+    Plot training history including loss, accuracy, and other metrics
+    
+    Args:
+        history: Dictionary containing training history
+        save_dir: Directory to save plots
+        model_name: Name of the model
+        dataset_name: Name of the dataset
+    """
+    os.makedirs(save_dir, exist_ok=True)
+    epochs = range(1, len(history['train_loss']) + 1)
+    
+    # Set style
+    sns.set_style("whitegrid")
+    plt.rcParams['figure.figsize'] = (12, 8)
+    
+    # 1. Plot Loss Curves
+    plt.figure(figsize=(10, 6))
+    plt.plot(epochs, history['train_loss'], 'b-', label='Training Loss', linewidth=2, marker='o')
+    plt.plot(epochs, history['val_loss'], 'r-', label='Validation Loss', linewidth=2, marker='s')
+    plt.title(f'Training and Validation Loss - {model_name} on {dataset_name}', fontsize=14, fontweight='bold')
+    plt.xlabel('Epoch', fontsize=12)
+    plt.ylabel('Loss', fontsize=12)
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    loss_path = os.path.join(save_dir, f'{model_name}_loss_curves.png')
+    plt.savefig(loss_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Loss curves saved to: {loss_path}")
+    
+    # 2. Plot Accuracy Curves
+    plt.figure(figsize=(10, 6))
+    plt.plot(epochs, history['train_acc'], 'b-', label='Training Accuracy', linewidth=2, marker='o')
+    plt.plot(epochs, history['val_acc'], 'r-', label='Validation Accuracy', linewidth=2, marker='s')
+    plt.title(f'Training and Validation Accuracy - {model_name} on {dataset_name}', fontsize=14, fontweight='bold')
+    plt.xlabel('Epoch', fontsize=12)
+    plt.ylabel('Accuracy (%)', fontsize=12)
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    acc_path = os.path.join(save_dir, f'{model_name}_accuracy_curves.png')
+    plt.savefig(acc_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Accuracy curves saved to: {acc_path}")
+    
+    # 3. Plot Metrics (MCC, TPR, F1)
+    plt.figure(figsize=(12, 6))
+    plt.plot(epochs, [m * 100 for m in history['val_mcc']], 'g-', label='MCC', linewidth=2, marker='o')
+    plt.plot(epochs, [m * 100 for m in history['val_tpr']], 'm-', label='TPR (Recall)', linewidth=2, marker='s')
+    plt.plot(epochs, [m * 100 for m in history['val_f1']], 'c-', label='F1 Score', linewidth=2, marker='^')
+    plt.title(f'Validation Metrics - {model_name} on {dataset_name}', fontsize=14, fontweight='bold')
+    plt.xlabel('Epoch', fontsize=12)
+    plt.ylabel('Metric Value (%)', fontsize=12)
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    metrics_path = os.path.join(save_dir, f'{model_name}_metrics_curves.png')
+    plt.savefig(metrics_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Metrics curves saved to: {metrics_path}")
+    
+    # 4. Combined Loss and Accuracy
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    
+    ax1.plot(epochs, history['train_loss'], 'b-', label='Training Loss', linewidth=2, marker='o')
+    ax1.plot(epochs, history['val_loss'], 'r-', label='Validation Loss', linewidth=2, marker='s')
+    ax1.set_xlabel('Epoch', fontsize=12)
+    ax1.set_ylabel('Loss', fontsize=12)
+    ax1.set_title('Loss Convergence', fontsize=13, fontweight='bold')
+    ax1.legend(fontsize=10)
+    ax1.grid(True, linestyle='--', alpha=0.7)
+    
+    ax2.plot(epochs, history['train_acc'], 'b-', label='Training Accuracy', linewidth=2, marker='o')
+    ax2.plot(epochs, history['val_acc'], 'r-', label='Validation Accuracy', linewidth=2, marker='s')
+    ax2.set_xlabel('Epoch', fontsize=12)
+    ax2.set_ylabel('Accuracy (%)', fontsize=12)
+    ax2.set_title('Accuracy Convergence', fontsize=13, fontweight='bold')
+    ax2.legend(fontsize=10)
+    ax2.grid(True, linestyle='--', alpha=0.7)
+    
+    plt.suptitle(f'Model Convergence - {model_name} on {dataset_name}', fontsize=14, fontweight='bold', y=1.02)
+    plt.tight_layout()
+    combined_path = os.path.join(save_dir, f'{model_name}_convergence.png')
+    plt.savefig(combined_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Convergence plot saved to: {combined_path}")
+
+def plot_confusion_matrix(cm, num_classes, save_dir, model_name, dataset_name, class_names=None):
+    """
+    Plot and save confusion matrix
+    
+    Args:
+        cm: Confusion matrix (numpy array)
+        num_classes: Number of classes
+        save_dir: Directory to save plot
+        model_name: Name of the model
+        dataset_name: Name of the dataset
+        class_names: Optional list of class names
+    """
+    os.makedirs(save_dir, exist_ok=True)
+    
+    plt.figure(figsize=(12, 10))
+    
+    # Normalize confusion matrix for better visualization
+    cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    cm_normalized = np.nan_to_num(cm_normalized)  # Handle division by zero
+    
+    # Create labels for classes
+    if class_names is None:
+        class_names = [f'Class {i}' for i in range(num_classes)]
+    
+    # Plot heatmap
+    sns.heatmap(cm_normalized, annot=True, fmt='.2f', cmap='Blues', 
+                xticklabels=class_names, yticklabels=class_names,
+                cbar_kws={'label': 'Normalized Frequency'}, linewidths=0.5)
+    
+    plt.title(f'Confusion Matrix - {model_name} on {dataset_name}', fontsize=14, fontweight='bold', pad=20)
+    plt.ylabel('True Label', fontsize=12)
+    plt.xlabel('Predicted Label', fontsize=12)
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
+    plt.tight_layout()
+    
+    cm_path = os.path.join(save_dir, f'{model_name}_confusion_matrix.png')
+    plt.savefig(cm_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Confusion matrix saved to: {cm_path}")
+    
+    # Also save raw confusion matrix (non-normalized)
+    plt.figure(figsize=(12, 10))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=class_names, yticklabels=class_names,
+                cbar_kws={'label': 'Count'}, linewidths=0.5)
+    
+    plt.title(f'Confusion Matrix (Raw Counts) - {model_name} on {dataset_name}', 
+              fontsize=14, fontweight='bold', pad=20)
+    plt.ylabel('True Label', fontsize=12)
+    plt.xlabel('Predicted Label', fontsize=12)
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
+    plt.tight_layout()
+    
+    cm_raw_path = os.path.join(save_dir, f'{model_name}_confusion_matrix_raw.png')
+    plt.savefig(cm_raw_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Raw confusion matrix saved to: {cm_raw_path}")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -233,6 +387,17 @@ if __name__ == '__main__':
     best_val_acc = 0.0
     patience_counter = 0
     early_stop_patience = 5
+    
+    # Training history for visualization
+    history = {
+        'train_loss': [],
+        'train_acc': [],
+        'val_loss': [],
+        'val_acc': [],
+        'val_mcc': [],
+        'val_tpr': [],
+        'val_f1': []
+    }
 
     for epoch in tqdm(range(args.epochs)):
         # Training phase
@@ -279,6 +444,15 @@ if __name__ == '__main__':
         
         # Calculate detailed validation metrics
         val_metrics = calculate_metrics(val_targets, val_predictions, num_classes)
+        
+        # Store history for visualization
+        history['train_loss'].append(train_loss)
+        history['train_acc'].append(train_acc)
+        history['val_loss'].append(val_loss)
+        history['val_acc'].append(val_metrics["Accuracy"] * 100)
+        history['val_mcc'].append(val_metrics["MCC"])
+        history['val_tpr'].append(val_metrics["TPR"])
+        history['val_f1'].append(val_metrics["F1_Score"])
         
         # Update learning rate
         scheduler.step(val_metrics["Accuracy"])
@@ -348,7 +522,7 @@ if __name__ == '__main__':
     print("-"*80)
     
     # Confusion Matrix
-    cm = confusion_matrix(final_targets, final_predictions, labels=range(num_classes))
+    cm = final_metrics['Confusion_Matrix']
     print("CONFUSION MATRIX:")
     print("Predicted ->")
     print("Actual ↓")
@@ -363,5 +537,24 @@ if __name__ == '__main__':
         print()
     print("="*80)
     
+    # Save model
     torch.save(torch_model.state_dict(), outfile)
     print(f'Model parameters saved to: {outfile}')
+    
+    # Generate and save visualization plots
+    print("\n" + "="*80)
+    print("GENERATING VISUALIZATION PLOTS...")
+    print("="*80)
+    
+    # Get directory for saving plots
+    plot_dir = os.path.dirname(outfile)
+    
+    # Plot training history
+    plot_training_history(history, plot_dir, args.model, args.dataset)
+    
+    # Plot confusion matrix
+    plot_confusion_matrix(cm, num_classes, plot_dir, args.model, args.dataset)
+    
+    print("\n" + "="*80)
+    print("All visualization plots have been saved successfully!")
+    print("="*80)
