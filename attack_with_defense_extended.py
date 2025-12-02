@@ -237,6 +237,11 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
             normalize_grad=cfg_os.get("normalize_grad", True),
             make_shadow=cfg_os.get("make_shadow", False),
             device=device,
+            obfus_targets=tuple(cfg_os.get("obfus_targets", ("linear",))),
+            max_obfus_layers=cfg_os.get("max_obfus_layers"),
+            initial_reseed=cfg_os.get("initial_reseed", True),
+            proactive_reseed_period=cfg_os.get("proactive_period", 0),
+            allow_fallback=cfg_os.get("allow_fallback", True),
         )
         cal_stats = obfus_runtime.calibrate(sig_steps=50)
         print("[OBFUS-SIG] Calibrated:", cal_stats)
@@ -355,16 +360,15 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
             print(f"Iteration {i+1}/{attack_iters}: applied {attack_mode} step -> {info}")
             # Evaluate after each iteration
             obfus_alert = None
-            obfus_reseed = None
+            obfus_action = 'none'
             if obfus_runtime is not None:
                 obfus_ret = obfus_runtime.periodic_check(i + 1)
                 sig_alert = obfus_ret.get('sig', {}).get('alert', 0)
                 fp_alert = obfus_ret.get('fp', {}).get('alert', 0)
                 ctrl_action = obfus_ret.get('ctrl', {}).get('action', 'none')
+                obfus_action = ctrl_action
                 if sig_alert or fp_alert or ctrl_action != 'none':
                     obfus_alert = f"SIG={sig_alert}, FP={fp_alert}, Action={ctrl_action}"
-                    if ctrl_action == 'reseed':
-                        obfus_reseed = True
                     print(f"  [OBFUS-SIG] Alert detected: {obfus_alert}")
             acc_i, det_i, det_cnt_i, total_i = _evaluate_with_dig(protected_model, test_loader, sus_score_range, device)
             # Extract flip details if present
@@ -392,7 +396,7 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
                 det_cnt_i,
                 total_i,
                 obfus_alert if obfus_alert else '',
-                'yes' if obfus_reseed else 'no',
+                obfus_action,
             ])
         # Save per-iteration CSV
         output_dir = 'results/defense_results'
@@ -403,7 +407,7 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
             writer.writerow([
                 'iteration','mode','module','old_val','new_val','elem_idx','bit_idx',
                 'accuracy_after_iter','dig_detection_rate_iter','samples_detected','samples_processed',
-                'obfus_sig_alert','obfus_reseed'
+                'obfus_sig_alert','obfus_action'
             ])
             writer.writerows(iter_logs)
         print(f"Per-iteration log saved to: {csv_path}")
@@ -760,11 +764,20 @@ if __name__ == '__main__':
     parser.add_argument('--fp-entropy-th', type=float, default=0.15, help='Bit-plane entropy drift threshold')
     parser.add_argument('--obfus-mode', type=str, default='or', choices=['or','and'], help='Alert fusion mode')
     parser.add_argument('--obfus-shadow', action='store_true', help='Enable shadow model (not switched automatically by default)')
+    parser.add_argument('--obfus-targets', type=str, default='linear', help='Comma-separated layer types to obfuscate (linear,conv1d,conv2d)')
+    parser.add_argument('--obfus-max-layers', type=int, default=2, help='Maximum number of layers to wrap (0 = all)')
+    parser.add_argument('--obfus-initial-reseed', action='store_true', help='Immediately reseed obfuscated layers at start')
+    parser.add_argument('--obfus-auto-reseed', type=int, default=0, help='Force reseed every N checks even without alerts (0 disables)')
+    parser.add_argument('--obfus-strict', action='store_true', help='Fail instead of falling back to activation permutation when weight shuffle unsupported')
     args = parser.parse_args()
     
     # Inject OBFUS-SIG config if requested
     if args.obfus_sig:
-        attack_with_dig_protection._obfus_sig_cfg = {
+        targets = [t.strip().lower() for t in args.obfus_targets.split(',') if t.strip()]
+        if not targets:
+            targets = ['linear']
+        max_layers = None if args.obfus_max_layers <= 0 else args.obfus_max_layers
+        obfus_cfg = {
             "alert_mode": args.obfus_mode,
             "sig_period": args.sig_period,
             "sig_k": args.sig_k,
@@ -773,7 +786,14 @@ if __name__ == '__main__':
             "fp_threshold": args.fp_threshold,
             "fp_entropy_threshold": args.fp_entropy_th,
             "make_shadow": bool(args.obfus_shadow),
+            "obfus_targets": targets,
+            "max_obfus_layers": max_layers,
+            "proactive_period": max(0, args.obfus_auto_reseed),
+            "allow_fallback": not bool(args.obfus_strict),
         }
+        if args.obfus_initial_reseed:
+            obfus_cfg["initial_reseed"] = True
+        attack_with_dig_protection._obfus_sig_cfg = obfus_cfg
     else:
         attack_with_dig_protection._obfus_sig_cfg = None
     

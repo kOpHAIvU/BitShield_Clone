@@ -1,10 +1,10 @@
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Sequence
 
 import copy
 import torch
 import torch.nn as nn
 
-from .obfus_adapter import ObfusPair, wrap_last_linear_with_obfus
+from .obfus_adapter import ObfusPair, wrap_model_with_obfus
 from .sig_lite import SigLiteMonitor
 from .bit_fingerprint import BitFingerprint
 from .controller import ControllerPolicy
@@ -38,16 +38,24 @@ class ObfusSigRuntime:
         normalize_grad: bool = True,
         make_shadow: bool = False,
         device: Optional[torch.device] = None,
+        obfus_targets: Sequence[str] = ("linear",),
+        max_obfus_layers: Optional[int] = None,
+        initial_reseed: bool = True,
+        proactive_reseed_period: int = 0,
+        allow_fallback: bool = True,
     ) -> None:
         self.device = device or next(model.parameters()).device
-        self.model = model
-        # Wrap last linear with obfuscation pair
-        self.model = wrap_last_linear_with_obfus(self.model)
-        # Collect adapters
-        self.adapters = []
-        for m in self.model.modules():
-            if isinstance(m, ObfusPair):
-                self.adapters.append(m)
+        self.model, adapters = wrap_model_with_obfus(
+            model,
+            targets=obfus_targets,
+            max_wrapped=max_obfus_layers,
+            seed=None,
+            allow_fallback=allow_fallback,
+        )
+        self.adapters: List[ObfusPair] = adapters
+        if initial_reseed:
+            for adapter in self.adapters:
+                adapter.reseed()
         # Monitors
         self.sig = SigLiteMonitor(
             self.model,
@@ -60,7 +68,11 @@ class ObfusSigRuntime:
         )
         self.fp = BitFingerprint(self.model, threshold_psi=fp_threshold, threshold_entropy=fp_entropy_threshold)
         # Controller
-        self.ctrl = ControllerPolicy(alert_mode=alert_mode, cooldown_steps=max(2, sig_period))
+        self.ctrl = ControllerPolicy(
+            alert_mode=alert_mode,
+            cooldown_steps=max(2, sig_period),
+            proactive_period=proactive_reseed_period,
+        )
         self.ctrl.register_adapters(self.adapters)
         # Optional shadow model
         self.shadow_model = copy.deepcopy(self.model).to(self.device) if make_shadow else None
