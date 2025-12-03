@@ -7,6 +7,7 @@ import glob
 import pandas as pd
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.sampler import WeightedRandomSampler
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
 
@@ -134,8 +135,17 @@ def preprocess_iotid20_data(data_root, source_csv=None, download_url=None):
     return train_csv, test_csv, n_features, n_classes
 
 
-def get_iotid20_loader(csv_file, batch_size=256, shuffle=True, num_workers=0, 
-                      feature_cols=None, label_col='label', scaler=None, label_encoder=None):
+def get_iotid20_loader(
+    csv_file,
+    batch_size=256,
+    shuffle=True,
+    num_workers=0,
+    feature_cols=None,
+    label_col='label',
+    scaler=None,
+    label_encoder=None,
+    use_balanced_sampler=False,
+):
     """
     Create DataLoader for IoTID20 dataset
     
@@ -153,10 +163,51 @@ def get_iotid20_loader(csv_file, batch_size=256, shuffle=True, num_workers=0,
         DataLoader: PyTorch DataLoader
     """
     dataset = IoTID20Dataset(csv_file, feature_cols, label_col, scaler, label_encoder)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers), dataset
+
+    if use_balanced_sampler:
+        # Compute class counts for weighted sampling
+        labels = dataset.y.numpy()
+        class_sample_counts = np.bincount(labels)
+        # Avoid division by zero for any missing class
+        class_sample_counts = np.where(class_sample_counts == 0, 1, class_sample_counts)
+        class_weights = 1.0 / class_sample_counts.astype(np.float32)
+        sample_weights = class_weights[labels]
+        sampler = WeightedRandomSampler(
+            weights=torch.from_numpy(sample_weights),
+            num_samples=len(sample_weights),
+            replacement=True,
+        )
+        return (
+            DataLoader(
+                dataset,
+                batch_size=batch_size,
+                sampler=sampler,
+                shuffle=False,
+                num_workers=num_workers,
+            ),
+            dataset,
+        )
+
+    return (
+        DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_workers,
+        ),
+        dataset,
+    )
 
 
-def get_benign_loader_iotid20(dataset_name, image_size, split, batch_size, shuffle=True, num_workers=0):
+def get_benign_loader_iotid20(
+    dataset_name,
+    image_size,
+    split,
+    batch_size,
+    shuffle=True,
+    num_workers=0,
+    use_balanced_sampler=False,
+):
     """
     Compatibility function for train.py - creates IoTID20 loaders
     
@@ -180,12 +231,31 @@ def get_benign_loader_iotid20(dataset_name, image_size, split, batch_size, shuff
     
     # Create loaders
     if split == 'train':
-        loader, dataset = get_iotid20_loader(train_csv, batch_size, shuffle, num_workers)
+        loader, dataset = get_iotid20_loader(
+            train_csv,
+            batch_size,
+            shuffle,
+            num_workers,
+            use_balanced_sampler=use_balanced_sampler,
+        )
     elif split == 'test':
         # Load train dataset first to get scaler and label_encoder
-        _, train_dataset = get_iotid20_loader(train_csv, batch_size, False, num_workers)
-        loader, _ = get_iotid20_loader(test_csv, batch_size, shuffle, num_workers, 
-                                      scaler=train_dataset.scaler, label_encoder=train_dataset.label_encoder)
+        _, train_dataset = get_iotid20_loader(
+            train_csv,
+            batch_size,
+            False,
+            num_workers,
+            use_balanced_sampler=False,
+        )
+        loader, _ = get_iotid20_loader(
+            test_csv,
+            batch_size,
+            shuffle,
+            num_workers,
+            scaler=train_dataset.scaler,
+            label_encoder=train_dataset.label_encoder,
+            use_balanced_sampler=False,
+        )
     else:
         raise ValueError(f"Invalid split: {split}. Use 'train' or 'test'.")
     

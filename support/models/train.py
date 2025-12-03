@@ -297,6 +297,11 @@ if __name__ == '__main__':
     parser.add_argument('--use-class-weights', action='store_true', help='Use class weights to handle imbalance')
     parser.add_argument('--learning-rate', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for regularization')
+    parser.add_argument(
+        '--balanced-sampler',
+        action='store_true',
+        help='Use a class-balanced sampler for IoTID20 training',
+    )
     args = parser.parse_args()
 
     outfile = os.path.join(args.output_root, f'{args.dataset}/{args.model}/{args.model}.pt')
@@ -309,8 +314,24 @@ if __name__ == '__main__':
     # Set num_workers=0 to avoid multiprocessing issues in Docker
     if args.dataset == 'IoTID20' and IOTID20_AVAILABLE:
         print("Using IoTID20 data preprocessing...")
-        train_loader = get_benign_loader_iotid20(args.dataset, args.image_size, 'train', args.batch_size, shuffle=True, num_workers=0)
-        val_loader = get_benign_loader_iotid20(args.dataset, args.image_size, 'test', args.batch_size, shuffle=True, num_workers=0)
+        train_loader = get_benign_loader_iotid20(
+            args.dataset,
+            args.image_size,
+            'train',
+            args.batch_size,
+            shuffle=True,
+            num_workers=0,
+            use_balanced_sampler=args.balanced_sampler,
+        )
+        val_loader = get_benign_loader_iotid20(
+            args.dataset,
+            args.image_size,
+            'test',
+            args.batch_size,
+            shuffle=True,
+            num_workers=0,
+            use_balanced_sampler=False,
+        )
     elif DATAMAN_AVAILABLE:
         train_loader = dataman.get_benign_loader(args.dataset, args.image_size, 'train', args.batch_size, shuffle=True, num_workers=0)
         val_loader = dataman.get_benign_loader(args.dataset, args.image_size, 'test', args.batch_size, shuffle=True, num_workers=0)
