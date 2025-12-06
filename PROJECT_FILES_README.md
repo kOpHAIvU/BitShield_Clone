@@ -5,6 +5,17 @@
 
 ### Thư mục gốc
 - `attack_with_defense_extended.py`: Trình mô phỏng tấn công và đánh giá phòng thủ chính (DIG/CIG/combined) cho dữ liệu tabular (IoTID20/WUSTL/CICIoT2023). Hỗ trợ các chế độ tấn công: noise, PBS, RandomFlip, PBS→Random, Random→PBS; có log chi tiết theo vòng và xuất CSV.
+- TÍCH HỢP OBFUS-SIG-NIDS: thêm lựa chọn `--obfus-sig` để kích hoạt Obfuscation + SIG-Lite + Bit-Fingerprint theo bài báo, với các tham số:
+  - `--sig-period`, `--sig-k`, `--sig-grad {l1|l2}`, `--sig-norm`
+  - `--fp-threshold` (PSI), `--fp-entropy-th` (entropy bit-plane)
+  - `--obfus-mode {or|and}`, `--obfus-shadow`
+  - Ví dụ:
+  ```
+  python attack_with_defense_extended.py dig ResNetSEBlockIoT CICIoT2023 \
+    --device cpu --attack-mode pbs --attack-iters 25 \
+    --obfus-sig --sig-period 500 --sig-k 3.0 --sig-grad l1 --sig-norm \
+    --fp-threshold 0.1 --fp-entropy-th 0.15 --obfus-mode or
+  ```
 - `attack_with_defense.py`: Phiên bản trước/simplified của kịch bản tấn công + phòng thủ.
 - `attack_with_defense_updated.py`: Bản trung gian dùng để so sánh/đối chiếu logic với bản extended.
 - `attacksim.py`: Mô phỏng tấn công lật bit ở mức binary (DRAM/binary-level) với dữ liệu sweep + Ghidra, đánh giá hệ quả và phát hiện DIG/CIG thực tế (validator `fliptest.py`). Xuất kết quả pickle.
@@ -23,6 +34,12 @@
 - `support/torchdig_tabular.py`: Triển khai DIG cho tabular (tính điểm nghi ngờ: gradient/entropy/feature/statistics) + tính khoảng nghi ngờ “bình thường” để phát hiện.
 - `support/torchdig.py`: Phiên bản DIG gốc (cho các bài toán không tabular/không mở rộng).
 - `support/models/` (20+ file): Định nghĩa các mô hình PyTorch (ví dụ `ResNetSEBlockIoT`, `EfficientCNN`, `SimpleCNNIoT`, …) và các lớp lượng tử hóa (`quan_Linear`, `quan_Conv1d`, `CustomBlock`).
+- `support/obfus_sig/`: Kiến trúc OBFUS-SIG-NIDS (3 tầng, thuần mô hình):
+  - `obfus_adapter.py`: `ObfusAdapter`, `ObfusPair` (permute + inverse), `wrap_last_linear_with_obfus(...)`
+  - `sig_lite.py`: `SigLiteMonitor` (D_KL(u||ŷ), ‖∂KL/∂W_last‖ with median±k·MAD, L1/L2, normalize)
+  - `bit_fingerprint.py`: Fingerprint histogram int8 + entropy bit-plane, cảnh báo bằng PSI/entropy drift
+  - `controller.py`: Gộp alert (OR/AND), cooldown, reseed adapters
+  - `runtime.py`: `ObfusSigRuntime` gắn tất cả và cung cấp API `calibrate()`/`periodic_check()`
 - `support/dataman_iotid20.py`, `support/dataman_extended.py`: Bộ tải dữ liệu (tiền xử lý, scaler/encoder nếu cần).
 - `support/demo_improved_training.py`, `support/demo_iotid20_training.py`: Ví dụ/trình diễn huấn luyện nhanh.
 - `support/torchdig_tabular.py`: Đã chỉnh sửa để nhất quán thiết bị (CPU/GPU), ngăn lỗi device-mismatch khi tính điểm nghi ngờ.

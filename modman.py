@@ -8,28 +8,16 @@ import shutil
 import torchvision
 import support.models as models
 
-# Optional TVM imports with fallback
-try:
-    import tvm
-    from tvm.driver import tvmc
-    from tvm.target import Target
-    from tvm import relay, tir
-    from tvm.contrib.debugger import debug_executor
-    from tvm.contrib import graph_executor
-    from tvm.contrib import relay_viz
-    from tvm.contrib.relay_viz.dot import DotPlotter
-    from tvm.contrib.relay_viz.interface import DefaultVizParser
-    TVM_AVAILABLE = True
-except ImportError:
-    print("Warning: TVM not available. Some functionality will be limited.")
-    TVM_AVAILABLE = False
-    class tvm:
-        pass
-    class relay:
-        pass
-    class tir:
-        pass
-
+import tvm
+from tvm import relay, tir
+from tvm.target import Target
+TVM_AVAILABLE = True
+from tvm.driver import tvmc
+from tvm.contrib.debugger import debug_executor
+from tvm.contrib import graph_executor
+from tvm.contrib import relay_viz
+from tvm.contrib.relay_viz.dot import DotPlotter
+from tvm.contrib.relay_viz.interface import DefaultVizParser
 from collections import namedtuple
 import onnx
 from scipy.special import softmax
@@ -196,8 +184,16 @@ def get_torch_mod(model_name, dataset):
     torch_model = model_class(pretrained=False)
     torch_model.eval()
 
+    model_path = f'{cfg.models_dir}/{dataset}/{model_name}/{model_name}.pt'
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(
+            f"Model file not found: {model_path}\n"
+            f"Please train the model first or check the path.\n"
+            f"Expected structure: {cfg.models_dir}/{{dataset}}/{{model_name}}/{{model_name}}.pt"
+        )
+    
     maybe_state_dict = torch.load(
-        f'{cfg.models_dir}/{dataset}/{model_name}/{model_name}.pt',
+        model_path,
         map_location=torch.device('cpu')
     )
 
@@ -257,6 +253,12 @@ def get_irmod(
     input_shape = (batch_size, nchannels, image_size, image_size)
     if model_name.startswith('Q'):
         fname = f'{cfg.models_dir}/{dataset}/{model_name}/{model_name}-{batch_size}.onnx'
+        if not os.path.exists(fname):
+            raise FileNotFoundError(
+                f"ONNX model file not found: {fname}\n"
+                f"Please export the quantized model first or check the path.\n"
+                f"Expected structure: {cfg.models_dir}/{{dataset}}/{{model_name}}/{{model_name}}-{{batch_size}}.onnx"
+            )
         mod, params = relay.frontend.from_onnx(onnx.load(fname), {'input0': input_shape})
     else:
         torch_model = get_torch_mod(model_name, dataset)
@@ -363,9 +365,6 @@ def build_module(
     return gemod, gefmod
 
 def build_module_tvmc(irmod, params, export_path=None, target=targets['avx2'], **kwargs):
-    if not TVM_AVAILABLE:
-        raise ImportError("TVM is required for build_module_tvmc but not available. Please install TVM or use Docker.")
-    
     start_time = time.time()
     with tempfile.NamedTemporaryFile() as tmpf:
         tvmc_mod = tvmc.TVMCModel(irmod, params=params)
@@ -382,9 +381,6 @@ def build_module_tvmc(irmod, params, export_path=None, target=targets['avx2'], *
     return rtmod, lib
 
 def get_json_and_ir(irmod, params, opt_level=3, target=targets['avx2']):
-    if not TVM_AVAILABLE:
-        raise ImportError("TVM is required for get_json_and_ir but not available. Please install TVM or use Docker.")
-    
     raw_targets = Target.canon_multi_target_and_host(Target.target_or_current(target))
     with tvm.transform.PassContext(opt_level=opt_level, config={'tir.disable_assert': True}):
         graph_json_str, rtmod, _params = relay.build_module.BuildModule().build(irmod, target=raw_targets, params=params)
