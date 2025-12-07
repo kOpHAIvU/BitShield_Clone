@@ -326,6 +326,13 @@ def bias_add_grad(orig, grad):
     ]
 register_grad_override('nn.bias_add', bias_add_grad)
 
+# Straight-through estimator for round() to avoid NotImplementedError during DIG
+def round_grad(orig, grad):
+    # Treat round as identity for gradient purposes
+    return [grad]
+
+register_grad_override('round', round_grad)
+
 @r.op.register_gradient('nn.pad')
 def pad_grad(orig, grad):
     # For now we just handle the simplest case

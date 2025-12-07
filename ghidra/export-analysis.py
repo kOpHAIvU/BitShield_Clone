@@ -5,13 +5,18 @@ import os
 import struct
 import utils
 
-# Get script directory and construct output path
-script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(script_dir)
-analysis_dir = os.path.join(project_root, 'ghidra', 'analysis')
-
 # Get current program name (works in both GUI and headless)
 prog = utils.get_current_program()
+
+# Check if output directory is specified via environment variable (from Python code)
+# Otherwise, use current working directory or project root
+if 'GHIDRA_ANALYSIS_OUTPUT_DIR' in os.environ:
+    analysis_dir = os.environ['GHIDRA_ANALYSIS_OUTPUT_DIR']
+else:
+    # Fallback: use current working directory (cwd) for output path
+    # When run from temp directory (as in one_shot_ghidra_analyse), cwd will be the temp dir
+    cwd = os.getcwd()
+    analysis_dir = os.path.join(cwd, 'ghidra', 'analysis')
 
 outfile = os.path.join(analysis_dir, '{}-analysis.json'.format(prog.getName()))
 

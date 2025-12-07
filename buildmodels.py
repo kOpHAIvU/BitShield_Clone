@@ -133,6 +133,7 @@ def maybe_build_tvm_mod_dig_only(bi: utils.BinaryInfo, check_acc, force=False):
         print(f'Force rebuilding {output_file}...')
         os.remove(output_file)
     print(f'Building {output_file}')
+    utils.ensure_dir_of(output_file)
 
     mod, params, output_defs = get_dig_instrumented_mod(bi)
 
@@ -153,6 +154,7 @@ def maybe_build_classic_cig_tvm(bi, check_acc, patcher_kwargs={}, plan_fn_kwargs
         print(f'Force rebuilding {output_file}...')
         os.remove(output_file)
     print(f'Patching to generate {output_file}')
+    utils.ensure_dir_of(output_file)
 
     output_defs = None
     # TODO: Maybe change nc/ncnp -> ncpp/nc?
@@ -186,6 +188,7 @@ def maybe_build_ccN_cig_tvm(cig_name, bi: utils.BinaryInfo, check_acc, force=Fal
         print(f'Force rebuilding {output_file}...')
         os.remove(output_file)
     print(f'Patching to generate {output_file}')
+    utils.ensure_dir_of(output_file)
 
     irmod, params, output_defs = get_dig_instrumented_mod(bi)
     builder_cls = {
