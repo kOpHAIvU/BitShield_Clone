@@ -245,7 +245,11 @@ def get_torch_mod(model_name, dataset):
                         raise ValueError(f"Cannot determine model parameters for dataset: {dataset}")
         else:
             # For other datasets (image datasets), use pretrained=False
-            torch_model = model_class(pretrained=False)
+            try:
+                torch_model = model_class(pretrained=False)
+            except TypeError:
+                # Model doesn't support pretrained parameter
+                torch_model = model_class()
     
     torch_model.eval()
 

@@ -34,8 +34,13 @@ class quan_Linear(nn.Linear):
             return F.linear(input, self.weight * self.step_size, self.bias)
         else:
             self.__reset_stepsize__()
-            weight_quan = quantize(self.weight, self.step_size,
-                                   self.half_lvls) * self.step_size
+            # Use inference-friendly version when not training
+            if not self.training:
+                weight_quan = quantize_inference(self.weight, self.step_size,
+                                                 self.half_lvls) * self.step_size
+            else:
+                weight_quan = quantize(self.weight, self.step_size,
+                                       self.half_lvls) * self.step_size
             return F.linear(input, weight_quan, self.bias)
 
     def __reset_stepsize__(self):
@@ -138,9 +143,11 @@ class _quantize_func(torch.autograd.Function):
         # for backward computation
         ctx.step_size = step_size
         ctx.half_lvls = half_lvls
-        output = F.hardtanh(input,
-                            min_val=-ctx.half_lvls * ctx.step_size.item(),
-                            max_val=ctx.half_lvls * ctx.step_size.item())
+        # Use torch.clamp instead of F.hardtanh to avoid .item() call
+        # This makes the operation traceable by PyTorch JIT
+        min_val = -ctx.half_lvls * ctx.step_size
+        max_val = ctx.half_lvls * ctx.step_size
+        output = torch.clamp(input, min=min_val, max=max_val)
 
         output = torch.round(output / ctx.step_size)
         return output
@@ -152,6 +159,17 @@ class _quantize_func(torch.autograd.Function):
         return grad_input, None, None
 
 quantize = _quantize_func.apply
+
+# Inference-friendly version without custom autograd
+def quantize_inference(input, step_size, half_lvls):
+    """Quantization function for inference/tracing without custom autograd"""
+    # Convert min/max to Python scalars so TVM sees float constants (avoids Object type error)
+    step = float((half_lvls * step_size).detach().cpu().numpy().item())
+    min_val = -step
+    max_val = step
+    output = torch.clamp(input, min=min_val, max=max_val)
+    output = torch.round(output / step_size)
+    return output
 
 
 class _bin_func(torch.autograd.Function):
@@ -171,6 +189,12 @@ class _bin_func(torch.autograd.Function):
         return grad_input, None
 
 w_bin = _bin_func.apply
+
+# Inference-friendly version without custom autograd
+def w_bin_inference(input, mu=None):
+    """Binarization function for inference/tracing without custom autograd"""
+    output = torch.where(input.ge(0), torch.ones_like(input), -torch.ones_like(input))
+    return output
 
 
 class CustomBlock(nn.Module):
@@ -212,7 +236,11 @@ class CustomBlock(nn.Module):
             weight_applied = self.weight * self.step_size
         else:
             self.__reset_stepsize__()
-            weight_quan = quantize(self.weight, self.step_size, self.half_lvls) * self.step_size
+            # Use inference-friendly quantization when evaluating to avoid custom autograd PythonOps
+            if not self.training:
+                weight_quan = quantize_inference(self.weight, self.step_size, self.half_lvls) * self.step_size
+            else:
+                weight_quan = quantize(self.weight, self.step_size, self.half_lvls) * self.step_size
             weight_applied = weight_quan
 
         # Linear transformation

@@ -227,11 +227,83 @@ def one_shot_ghidra_analyse(fpath) -> Dict:
     fpath = os.path.abspath(fpath)
     with tempfile.TemporaryDirectory() as tmpdir:
         fname = os.path.basename(fpath)
-        subprocess.run([
+        # Set output directory via environment variable so Ghidra script knows where to save
+        analysis_output_dir = f'{tmpdir}/ghidra/analysis'
+        os.makedirs(analysis_output_dir, exist_ok=True)
+        env = os.environ.copy()
+        env['GHIDRA_ANALYSIS_OUTPUT_DIR'] = analysis_output_dir
+        result = subprocess.run([
             f'{cfg.ghidra_dir}/import-run-script-once.sh', fpath, 'export-analysis.py'
-        ], check=True, cwd=tmpdir, stdout=subprocess.DEVNULL)
-        analysis_path = f'{tmpdir}/ghidra/analysis/{fname}-analysis.json'
-        return load_json(analysis_path)
+        ], check=True, cwd=tmpdir, capture_output=True, text=True, env=env)
+        # Print output for debugging
+        if result.stdout:
+            print(f'Ghidra script stdout: {result.stdout}')
+        if result.stderr:
+            print(f'Ghidra script stderr: {result.stderr}')
+        
+        # Check what was created in tmpdir
+        print(f'Temp directory contents: {os.listdir(tmpdir) if os.path.exists(tmpdir) else "N/A"}')
+        
+        # Try multiple possible locations for the analysis file
+        # 1. In our temp directory (if Ghidra used it)
+        analysis_dir = f'{tmpdir}/ghidra/analysis'
+        expected_path = f'{analysis_dir}/{fname}-analysis.json'
+        if os.path.exists(expected_path):
+            return load_json(expected_path)
+        
+        # 2. Search in /tmp for recently created ghidra/analysis directories
+        # (Ghidra may have created its own temp directory)
+        import glob
+        import time
+        possible_paths = []
+        # Look for analysis files in temp directories
+        # First check our temp dir recursively
+        for ghidra_analysis in glob.glob(f'{tmpdir}/**/ghidra/analysis/*-analysis.json', recursive=True):
+            if os.path.exists(ghidra_analysis):
+                file_time = os.path.getmtime(ghidra_analysis)
+                if time.time() - file_time < 300:  # 5 minutes
+                    possible_paths.append(ghidra_analysis)
+        
+        # Then check /tmp/tmp*/ghidra/analysis/ (Ghidra may create its own temp dir)
+        # Parse the output path from Ghidra stdout if available
+        import re
+        output_match = re.search(r'Output written to ([^\s]+)', result.stdout)
+        if output_match:
+            output_path = output_match.group(1)
+            if os.path.exists(output_path):
+                print(f'Found analysis file from Ghidra output: {output_path}')
+                return load_json(output_path)
+        
+        # Also search in /tmp/tmp*/ghidra/analysis/
+        for tmp_subdir in glob.glob('/tmp/tmp*'):
+            ghidra_analysis_dir = os.path.join(tmp_subdir, 'ghidra', 'analysis')
+            if os.path.isdir(ghidra_analysis_dir):
+                for json_file in glob.glob(os.path.join(ghidra_analysis_dir, '*-analysis.json')):
+                    if os.path.exists(json_file):
+                        file_time = os.path.getmtime(json_file)
+                        if time.time() - file_time < 300:  # 5 minutes
+                            possible_paths.append(json_file)
+        
+        # Try the most recently created one first
+        if possible_paths:
+            possible_paths.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+            print(f'Found analysis file at: {possible_paths[0]}')
+            return load_json(possible_paths[0])
+        
+        # 3. If still not found, look for any .json file in analysis directories
+        if os.path.exists(analysis_dir):
+            json_files = [f for f in os.listdir(analysis_dir) if f.endswith('-analysis.json')]
+            if json_files:
+                return load_json(f'{analysis_dir}/{json_files[0]}')
+        
+        # If still not found, raise error with helpful message
+        raise FileNotFoundError(
+            f'Analysis file not found. Expected: {expected_path}\n'
+            f'Analysis directory exists: {os.path.exists(analysis_dir)}\n'
+            f'If directory exists, contents: {os.listdir(analysis_dir) if os.path.exists(analysis_dir) else "N/A"}\n'
+            f'Temp dir: {tmpdir}\n'
+            f'Searched paths: {possible_paths}'
+        )
 
 def extract_graph_json(fname):
     import mmap

@@ -74,6 +74,7 @@ def find_cig_spots():
 
 def main():
     spots = find_cig_spots()
-    utils.save_json(spots, f'cig-spots.json')
+    # Avoid f-string for compatibility with Ghidra/Jython
+    utils.save_json(spots, 'cig-spots.json')
 
 main()
