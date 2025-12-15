@@ -80,3 +80,4 @@ save
 !.merge_file_*
 PROJECT_FILES_README.md
 RUN_GUIDE.md
+*.md 

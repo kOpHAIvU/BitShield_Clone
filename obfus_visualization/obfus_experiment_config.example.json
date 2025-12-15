@@ -1,0 +1,187 @@
+{
+  "experiment_name": "OBFUS Defense Experiment - ResNetSEBlockIoT on CICIoT2023",
+  "description": "Compare model performance across 3 stages with 4 attack scenarios",
+  
+  "model": {
+    "name": "ResNetSEBlockIoT",
+    "dataset": "CICIoT2023",
+    "device": "cuda"
+  },
+  
+  "attack": {
+    "iterations": 25,
+    "modes": [
+      "pbs",
+      "random",
+      "pbs2random",
+      "random2pbs"
+    ],
+    "description": {
+      "pbs": "Progressive Bit Search - targeted attack (most damaging)",
+      "random": "Random Bit Flip - random attack",
+      "pbs2random": "PBS in first half, Random in second half",
+      "random2pbs": "Random in first half, PBS in second half"
+    }
+  },
+  
+  "obfus_defense": {
+    "enabled": true,
+    "sig_lite": {
+      "period": 20,
+      "k": 3.0,
+      "grad_norm_type": "l1",
+      "normalize_grad": false,
+      "description": "SIG-Lite probes KL divergence and gradient norm every N iterations"
+    },
+    "bit_fingerprint": {
+      "psi_threshold": 0.1,
+      "entropy_threshold": 0.15,
+      "description": "Bit-Fingerprint detects weight distribution drift using PSI and entropy"
+    },
+    "obfuscation": {
+      "targets": ["linear", "conv1d"],
+      "max_layers": null,
+      "initial_reseed": false,
+      "auto_reseed_period": 10,
+      "allow_fallback": true,
+      "description": "Obfus-Adapter permutes channels/neurons to confuse attackers"
+    },
+    "policy": {
+      "alert_mode": "or",
+      "cooldown_steps": 20,
+      "description": "Controller fuses alerts and triggers reseed/shadow model switching"
+    }
+  },
+  
+  "metrics": {
+    "evaluated": [
+      "accuracy",
+      "f1_score",
+      "tpr",
+      "mcc"
+    ],
+    "description": {
+      "accuracy": "Overall accuracy",
+      "f1_score": "F1-Score (harmonic mean of precision and recall)",
+      "tpr": "True Positive Rate (Recall/Sensitivity)",
+      "mcc": "Matthews Correlation Coefficient"
+    }
+  },
+  
+  "output": {
+    "results_json": "results/obfus_experiments/CICIoT2023_ResNetSEBlockIoT_obfus_experiment.json",
+    "visualizations_dir": "results/obfus_visualizations/CICIoT2023_ResNetSEBlockIoT/",
+    "charts": [
+      "all_metrics_combined.png",
+      "accuracy_comparison.png",
+      "f1_comparison.png",
+      "tpr_comparison.png",
+      "mcc_comparison.png",
+      "defense_effectiveness.png",
+      "degradation_comparison.png"
+    ]
+  },
+  
+  "expected_results": {
+    "baseline": {
+      "accuracy": "0.70-0.75",
+      "f1_score": "0.65-0.70",
+      "tpr": "0.60-0.70",
+      "mcc": "0.55-0.65",
+      "note": "Clean model performance without attacks"
+    },
+    "attack_no_defense": {
+      "accuracy": "0.10-0.30",
+      "f1_score": "0.08-0.25",
+      "tpr": "0.05-0.20",
+      "mcc": "0.05-0.20",
+      "note": "Significant performance degradation under BFA"
+    },
+    "attack_with_obfus": {
+      "accuracy": "0.45-0.60",
+      "f1_score": "0.40-0.55",
+      "tpr": "0.35-0.50",
+      "mcc": "0.35-0.50",
+      "recovery_percent": "40-70%",
+      "note": "OBFUS helps recover significant portion of lost performance"
+    }
+  },
+  
+  "tuning_recommendations": {
+    "if_recovery_low": {
+      "problem": "Recovery < 30%",
+      "solutions": [
+        "Decrease sig_period (e.g., 10) - check more frequently",
+        "Decrease sig_k (e.g., 2.0) - more sensitive thresholds",
+        "Decrease auto_reseed_period (e.g., 5) - reseed more often",
+        "Add initial_reseed (but may lower baseline accuracy)",
+        "Add more obfus_targets (e.g., conv2d)"
+      ]
+    },
+    "if_baseline_low": {
+      "problem": "Baseline accuracy < 50%",
+      "solutions": [
+        "Remove initial_reseed flag",
+        "Reduce number of obfus_targets",
+        "Set max_layers to limit obfuscation to last few layers",
+        "Check if model is properly trained"
+      ]
+    },
+    "if_attack_not_effective": {
+      "problem": "Attack causes < 10% degradation",
+      "solutions": [
+        "Increase attack_iterations (e.g., 50)",
+        "Use PBS attack mode (most effective)",
+        "Check if model has proper quantized layers"
+      ]
+    }
+  },
+  
+  "presets": {
+    "quick_test": {
+      "attack_iterations": 5,
+      "attack_modes": ["pbs"],
+      "sig_period": 5,
+      "description": "Fast test for debugging (5-10 minutes)"
+    },
+    "balanced": {
+      "attack_iterations": 25,
+      "attack_modes": ["pbs", "random", "pbs2random", "random2pbs"],
+      "sig_period": 20,
+      "sig_k": 3.0,
+      "obfus_targets": ["linear"],
+      "auto_reseed_period": 10,
+      "description": "Balanced configuration (2-3 hours)"
+    },
+    "strong_defense": {
+      "attack_iterations": 25,
+      "attack_modes": ["pbs", "random", "pbs2random", "random2pbs"],
+      "sig_period": 10,
+      "sig_k": 2.0,
+      "obfus_targets": ["linear", "conv1d"],
+      "auto_reseed_period": 5,
+      "initial_reseed": true,
+      "description": "Aggressive defense (may lower baseline accuracy)"
+    },
+    "minimal_defense": {
+      "attack_iterations": 25,
+      "attack_modes": ["pbs", "random", "pbs2random", "random2pbs"],
+      "sig_period": 50,
+      "sig_k": 4.0,
+      "obfus_targets": ["linear"],
+      "auto_reseed_period": 20,
+      "description": "Minimal overhead, moderate defense"
+    }
+  },
+  
+  "notes": [
+    "This config file is for reference only - parameters are passed via CLI",
+    "To use a preset: copy its parameters to your CLI command",
+    "Adjust parameters based on your hardware (GPU/CPU) and time constraints",
+    "Monitor baseline accuracy - if it drops significantly, reduce obfuscation intensity",
+    "PBS attack is typically the most effective, causing 40-60% accuracy drop",
+    "Good OBFUS recovery: 40-70% of lost performance restored",
+    "Run quick_test preset first to verify everything works before full experiment"
+  ]
+}
+
