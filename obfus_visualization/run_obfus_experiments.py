@@ -123,21 +123,53 @@ def _get_quant_modules(model):
     """Get all quantized modules"""
     return [(n, m) for n, m in model.named_modules() if _is_quant_module(m)]
 
+def int2bin(input_val, num_bits):
+    """Convert signed integer → unsigned integer (2's complement)"""
+    output = input_val if isinstance(input_val, torch.Tensor) else torch.tensor([input_val])
+    output = output.clone()
+    
+    if num_bits == 1:
+        output = output / 2 + 0.5
+    elif num_bits > 1:
+        # Convert negative values to 2's complement
+        mask = output.lt(0)
+        output[mask] = 2**num_bits + output[mask]
+    return output
+
+def bin2int(input_val, num_bits):
+    """Convert unsigned integer (2's complement) → signed integer"""
+    input_tensor = input_val if isinstance(input_val, torch.Tensor) else torch.tensor([input_val])
+    
+    if num_bits == 1:
+        output = input_tensor * 2 - 1
+    elif num_bits > 1:
+        mask = 2**(num_bits - 1) - 1
+        output = -(input_tensor & ~mask) + (input_tensor & mask)
+    return output
+
 def _flip_one_bit_in_module_weight(module, elem_idx: int, bit_idx: int):
-    """Flip one bit in module weight"""
+    """Flip one bit in module weight using quantized representation (like notebook)"""
     w = module.weight.data.view(-1)
     old_val = w[elem_idx].item()
     
-    # Flip bit in float32 representation
-    int_bits = torch.tensor([old_val]).view(torch.int32).item()
-    int_bits ^= (1 << bit_idx)
-    new_val = torch.tensor([int_bits], dtype=torch.int32).view(torch.float32).item()
+    # Get quantization bitwidth
+    N_bits = getattr(module, 'N_bits', 8)  # Default to 8 if not specified
+    
+    # Convert to quantized binary representation (2's complement)
+    bin_w = int2bin(torch.tensor([old_val]), N_bits).short().item()
+    
+    # Create mask and flip the bit
+    mask = 2 ** bit_idx
+    bin_w_flipped = bin_w ^ mask
+    
+    # Convert back to float
+    new_val = bin2int(torch.tensor([bin_w_flipped]), N_bits).float().item()
     
     w[elem_idx] = new_val
     return (old_val, new_val - old_val, elem_idx, bit_idx)
 
 def _random_flip_one_bit(model):
-    """Randomly flip one bit in model"""
+    """Randomly flip one bit in model (using quantized representation)"""
     quant_modules = _get_quant_modules(model)
     if not quant_modules:
         return None
@@ -146,7 +178,10 @@ def _random_flip_one_bit(model):
     mod_name, mod = quant_modules[np.random.randint(len(quant_modules))]
     w_flat = mod.weight.data.view(-1)
     elem_idx = np.random.randint(w_flat.numel())
-    bit_idx = np.random.randint(32)  # 32 bits for float32
+    
+    # ✅ Use N_bits instead of 32 (quantized representation)
+    N_bits = getattr(mod, 'N_bits', 8)
+    bit_idx = np.random.randint(N_bits)  # Flip within quantized bits
     
     result = _flip_one_bit_in_module_weight(mod, elem_idx, bit_idx)
     return {
@@ -186,7 +221,10 @@ def _progressive_bit_search(model, criterion, calib_x, calib_y, max_trials=16):
         w_flat = mod.weight.data.view(-1)
         
         elem_idx = np.random.randint(w_flat.numel())
-        bit_idx = np.random.randint(32)  # 32 bits for float32
+        
+        # ✅ Use N_bits instead of 32 (quantized representation)
+        N_bits = getattr(mod, 'N_bits', 8)
+        bit_idx = np.random.randint(N_bits)
         
         # Flip bit
         old_w = w_flat[elem_idx].clone()
