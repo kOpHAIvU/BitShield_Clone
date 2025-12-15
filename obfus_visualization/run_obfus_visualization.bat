@@ -57,8 +57,11 @@ echo   Running OBFUS Experiment Pipeline
 echo ========================================================================
 echo.
 
+REM Change to project root
+cd ..
+
 REM Run the full pipeline
-python run_full_obfus_pipeline.py %MODEL% %DATASET% ^
+python obfus_visualization\run_full_obfus_pipeline.py %MODEL% %DATASET% ^
   --device %DEVICE% ^
   --attack-iters %ATTACK_ITERS% ^
   --attack-modes %ATTACK_MODES% ^

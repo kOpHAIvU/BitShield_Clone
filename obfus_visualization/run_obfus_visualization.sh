@@ -61,8 +61,11 @@ echo "  Running OBFUS Experiment Pipeline"
 echo "========================================================================"
 echo ""
 
+# Change to project root
+cd ..
+
 # Run the full pipeline
-$PYTHON_CMD run_full_obfus_pipeline.py "$MODEL" "$DATASET" \
+$PYTHON_CMD obfus_visualization/run_full_obfus_pipeline.py "$MODEL" "$DATASET" \
   --device "$DEVICE" \
   --attack-iters "$ATTACK_ITERS" \
   --attack-modes "$ATTACK_MODES" \

@@ -11,6 +11,11 @@ import sys
 import os
 import argparse
 
+# Change to project root directory
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+os.chdir(project_root)
+
 def run_command(cmd):
     """Run command and handle errors"""
     print(f"\n{'='*60}")
@@ -66,7 +71,7 @@ def main():
     print("STEP 1: Running Experiments")
     print("="*70 + "\n")
     
-    cmd = f"python run_obfus_experiments.py {args.model} {args.dataset} " \
+    cmd = f"python obfus_visualization/run_obfus_experiments.py {args.model} {args.dataset} " \
           f"--device {args.device} " \
           f"--attack-iters {args.attack_iters} " \
           f"--attack-modes {args.attack_modes} " \
@@ -90,7 +95,7 @@ def main():
     print("STEP 2: Generating Visualizations")
     print("="*70 + "\n")
     
-    cmd = f"python visualize_obfus_results.py {output_json}"
+    cmd = f"python obfus_visualization/visualize_obfus_results.py {output_json}"
     run_command(cmd)
     
     # Done
