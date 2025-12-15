@@ -382,18 +382,34 @@ def run_experiments(model_name: str, dataset_name: str, device: str = 'cuda',
             print("Calibrating OBFUS...")
             obfus_runtime.calibrate()
             
-            # Attack with OBFUS
+            # ✅ CRITICAL: Evaluate baseline WITH OBFUS first!
             obfus_model = obfus_runtime.model
+            print("Evaluating baseline WITH OBFUS (before attack)...")
+            baseline_obfus_metrics = evaluate_model(obfus_model, test_loader, device, num_classes)
+            print(f"Baseline WITH OBFUS:")
+            print(f"  Accuracy: {baseline_obfus_metrics['accuracy']:.4f} (Δ from no-OBFUS: {baseline_obfus_metrics['accuracy'] - baseline_metrics['accuracy']:.4f})")
+            print(f"  F1-Score: {baseline_obfus_metrics['f1']:.4f}")
+            print(f"  TPR:      {baseline_obfus_metrics['tpr']:.4f}")
+            print(f"  MCC:      {baseline_obfus_metrics['mcc']:.4f}")
+            
+            # Check if OBFUS broke the model
+            if baseline_obfus_metrics['accuracy'] < 0.1:
+                print("⚠️  WARNING: OBFUS destroyed model baseline accuracy! This suggests:")
+                print("   - initial_reseed=True may be breaking the model")
+                print("   - Try with initial_reseed=False or reduce max_obfus_layers")
+            
+            # Attack with OBFUS
             attack_metrics = attack_model(obfus_model, test_loader, device, num_classes,
                                          attack_mode=attack_mode, attack_iters=attack_iters,
                                          obfus_runtime=obfus_runtime)
             results['attack_with_obfus'][attack_mode] = attack_metrics
+            results['attack_with_obfus'][attack_mode]['baseline_with_obfus'] = baseline_obfus_metrics
             
-            print(f"After Attack (with OBFUS) Metrics:")
-            print(f"  Accuracy: {attack_metrics['accuracy']:.4f} (Δ from baseline: {attack_metrics['accuracy'] - baseline_metrics['accuracy']:.4f})")
-            print(f"  F1-Score: {attack_metrics['f1']:.4f} (Δ from baseline: {attack_metrics['f1'] - baseline_metrics['f1']:.4f})")
-            print(f"  TPR:      {attack_metrics['tpr']:.4f} (Δ from baseline: {attack_metrics['tpr'] - baseline_metrics['tpr']:.4f})")
-            print(f"  MCC:      {attack_metrics['mcc']:.4f} (Δ from baseline: {attack_metrics['mcc'] - baseline_metrics['mcc']:.4f})")
+            print(f"\nAfter Attack (with OBFUS) Metrics:")
+            print(f"  Accuracy: {attack_metrics['accuracy']:.4f} (Δ from OBFUS baseline: {attack_metrics['accuracy'] - baseline_obfus_metrics['accuracy']:.4f})")
+            print(f"  F1-Score: {attack_metrics['f1']:.4f} (Δ from OBFUS baseline: {attack_metrics['f1'] - baseline_obfus_metrics['f1']:.4f})")
+            print(f"  TPR:      {attack_metrics['tpr']:.4f} (Δ from OBFUS baseline: {attack_metrics['tpr'] - baseline_obfus_metrics['tpr']:.4f})")
+            print(f"  MCC:      {attack_metrics['mcc']:.4f} (Δ from OBFUS baseline: {attack_metrics['mcc'] - baseline_obfus_metrics['mcc']:.4f})")
     
     return results
 

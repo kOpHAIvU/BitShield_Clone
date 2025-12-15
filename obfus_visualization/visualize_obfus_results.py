@@ -62,6 +62,12 @@ def extract_metrics_by_stage(results: Dict, attack_modes: List[str]) -> Dict:
         for mode in attack_modes:
             if mode in results.get('attack_with_obfus', {}):
                 value = results['attack_with_obfus'][mode].get(metric, 0.0)
+                # Check baseline with OBFUS
+                if 'baseline_with_obfus' in results['attack_with_obfus'][mode]:
+                    baseline_obfus = results['attack_with_obfus'][mode]['baseline_with_obfus'].get(metric, 0.0)
+                    if baseline_obfus < 0.1 and metric == 'accuracy':
+                        print(f"⚠️  WARNING: OBFUS baseline accuracy is {baseline_obfus:.4f} for mode '{mode}'")
+                        print(f"   This suggests OBFUS is breaking the model, not protecting it!")
             else:
                 value = 0.0
             data[metric]['with_obfus'].append(value)
