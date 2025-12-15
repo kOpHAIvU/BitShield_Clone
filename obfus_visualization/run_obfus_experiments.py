@@ -315,7 +315,7 @@ def run_experiments(model_name: str, dataset_name: str, device: str = 'cuda',
     print(f"Loading {dataset_name} dataset...")
     print(f"{'='*60}")
     
-    test_loader = get_benign_loader_extended(dataset_name, 'test', batch_size=256)
+    test_loader = get_benign_loader_extended(dataset_name, None, 'test', batch_size=256)
     
     # Stage 1: Baseline (original model, no attack)
     print(f"\n{'='*60}")
@@ -358,7 +358,7 @@ def run_experiments(model_name: str, dataset_name: str, device: str = 'cuda',
         print(f"OBFUS Config: {obfus_config}")
         
         # Get probe loader for OBFUS calibration
-        probe_loader = get_benign_loader_extended(dataset_name, 'train', batch_size=16, n_batches=50)
+        probe_loader = get_benign_loader_extended(dataset_name, None, 'train', batch_size=16)
         
         for attack_mode in attack_modes:
             print(f"\n--- Attack Mode: {attack_mode.upper()} with OBFUS ---")
