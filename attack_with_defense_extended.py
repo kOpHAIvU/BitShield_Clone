@@ -57,56 +57,31 @@ def _is_quant_module(module):
 
 
 def _flip_one_bit_in_module_weight(module, element_index=None, bit_index=None):
-    """Flip exactly one bit in the given quantized module's weight tensor.
-    Uses two's-complement flipping with module.N_bits and module.step_size.
-    Returns (module_name, old_val, new_val, flat_idx, bit_idx).
+    """Flip exactly one bit in the module's weight tensor.
+    Flips bit directly in float32 representation (realistic bit-flip attack).
+    Returns (old_val, new_val, element_index, bit_index).
     """
     if not hasattr(module, 'weight'):
         return None
-    if not hasattr(module, 'N_bits'):
-        return None
-    if not hasattr(module, 'step_size'):
-        return None
 
     weight = module.weight.data
-    n_bits = int(getattr(module, 'N_bits', 8))
-    step_size_tensor = getattr(module, 'step_size')
-    step_size = step_size_tensor.detach().float().view(-1)[0].item() if isinstance(step_size_tensor, torch.Tensor) else float(step_size_tensor)
-    if step_size == 0.0:
-        # Fallback to a reasonable step size based on weight range
-        with torch.no_grad():
-            max_abs = weight.abs().max().item() if weight.numel() > 0 else 1.0
-        step_size = max(1e-6, max_abs / max(1.0, (2 ** n_bits - 2) / 2.0))
-
     flat = weight.view(-1)
     numel = flat.numel()
     if numel == 0:
         return None
+    
     if element_index is None:
         element_index = int(torch.randint(low=0, high=numel, size=(1,)).item())
     if bit_index is None:
-        bit_index = int(torch.randint(low=0, high=n_bits, size=(1,)).item())
+        bit_index = int(torch.randint(low=0, high=32, size=(1,)).item())  # 32 bits for float32
 
-    # Quantize to integer domain
-    with torch.no_grad():
-        w_int = torch.round(flat / step_size).to(torch.int32)
-        # Two's-complement to unsigned
-        unsigned = w_int.clone()
-        neg_mask = unsigned < 0
-        unsigned[neg_mask] = (1 << n_bits) + unsigned[neg_mask]
-        # Flip target bit
-        toggle_mask = 1 << bit_index
-        before_unsigned = unsigned[element_index].item()
-        unsigned[element_index] = (unsigned[element_index].int() ^ toggle_mask)
-        after_unsigned = unsigned[element_index].item()
-        # Convert back to signed
-        mask = (1 << (n_bits - 1)) - 1
-        signed = -(unsigned & ~mask) + (unsigned & mask)
-        # De-quantize back to float domain
-        w_new = signed.to(flat.dtype) * step_size
-        old_val = flat[element_index].item()
-        new_val = w_new[element_index].item()
-        flat.copy_(w_new)
+    # Flip bit in float32 representation
+    old_val = flat[element_index].item()
+    int_bits = torch.tensor([old_val]).view(torch.int32).item()
+    int_bits ^= (1 << bit_index)
+    new_val = torch.tensor([int_bits], dtype=torch.int32).view(torch.float32).item()
+    
+    flat[element_index] = new_val
     return (old_val, new_val, element_index, bit_index)
 
 
@@ -153,7 +128,7 @@ def _progressive_bit_search(model, criterion, calib_x, calib_y, max_trials=16):
         if weight.numel() == 0:
             continue
         elem_idx = int(torch.randint(low=0, high=weight.numel(), size=(1,)).item())
-        bit_idx = int(torch.randint(low=0, high=int(getattr(module, 'N_bits', 8)), size=(1,)).item())
+        bit_idx = int(torch.randint(low=0, high=32, size=(1,)).item())  # 32 bits for float32
         # Save original
         old_val = weight.view(-1)[elem_idx].item()
         flip_info = _flip_one_bit_in_module_weight(module, elem_idx, bit_idx)

@@ -138,7 +138,7 @@ def _random_flip_one_bit(model):
     mod_name, mod = quant_modules[np.random.randint(len(quant_modules))]
     w_flat = mod.weight.data.view(-1)
     elem_idx = np.random.randint(w_flat.numel())
-    bit_idx = np.random.randint(8)
+    bit_idx = np.random.randint(32)  # 32 bits for float32
     
     result = _flip_one_bit_in_module_weight(mod, elem_idx, bit_idx)
     return {
@@ -178,7 +178,7 @@ def _progressive_bit_search(model, criterion, calib_x, calib_y, max_trials=16):
         w_flat = mod.weight.data.view(-1)
         
         elem_idx = np.random.randint(w_flat.numel())
-        bit_idx = np.random.randint(8)
+        bit_idx = np.random.randint(32)  # 32 bits for float32
         
         # Flip bit
         old_w = w_flat[elem_idx].clone()
