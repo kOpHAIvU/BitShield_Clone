@@ -120,16 +120,10 @@ def _flip_one_bit_in_module_weight(module, elem_idx: int, bit_idx: int):
     w = module.weight.data.view(-1)
     old_val = w[elem_idx].item()
     
-    # Convert to int representation
-    if isinstance(module, quan_Conv1d) or isinstance(module, quan_Linear):
-        scale = module.quan_weight_scale.item()
-        int_val = int(old_val / scale)
-        int_val ^= (1 << bit_idx)
-        new_val = int_val * scale
-    else:
-        int_bits = torch.tensor([old_val]).view(torch.int32).item()
-        int_bits ^= (1 << bit_idx)
-        new_val = torch.tensor([int_bits], dtype=torch.int32).view(torch.float32).item()
+    # Flip bit in float32 representation
+    int_bits = torch.tensor([old_val]).view(torch.int32).item()
+    int_bits ^= (1 << bit_idx)
+    new_val = torch.tensor([int_bits], dtype=torch.int32).view(torch.float32).item()
     
     w[elem_idx] = new_val
     return (old_val, new_val - old_val, elem_idx, bit_idx)
