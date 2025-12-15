@@ -55,39 +55,47 @@ def load_model(model_name: str, dataset_name: str, device='cpu'):
     return torch_model, num_classes
 
 def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, num_classes: int) -> Dict[str, float]:
-    """Calculate ACC, F1, TPR, MCC"""
+    """Calculate ACC, F1, TPR, MCC with support for imbalanced datasets"""
+    from sklearn.metrics import balanced_accuracy_score, f1_score, precision_score, recall_score
+    
     # Basic metrics
     accuracy = accuracy_score(y_true, y_pred)
     mcc = matthews_corrcoef(y_true, y_pred)
     
-    # Confusion matrix
-    cm = confusion_matrix(y_true, y_pred, labels=range(num_classes))
+    # Balanced accuracy (better for imbalanced classes)
+    balanced_acc = balanced_accuracy_score(y_true, y_pred)
     
-    # Calculate TPR and F1 per class
-    tpr_per_class = []
-    f1_per_class = []
+    # Macro-averaged metrics (treat all classes equally)
+    f1_macro = f1_score(y_true, y_pred, average='macro', zero_division=0)
+    tpr_macro = recall_score(y_true, y_pred, average='macro', zero_division=0)
+    precision_macro = precision_score(y_true, y_pred, average='macro', zero_division=0)
     
-    for i in range(num_classes):
-        tp = cm[i, i]
-        fp = np.sum(cm[:, i]) - tp
-        fn = np.sum(cm[i, :]) - tp
-        
-        # TPR (Recall)
-        tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
-        tpr_per_class.append(tpr)
-        
-        # Precision
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-        
-        # F1
-        f1 = 2 * (precision * tpr) / (precision + tpr) if (precision + tpr) > 0 else 0
-        f1_per_class.append(f1)
+    # Weighted metrics (weight by class support - better for imbalanced)
+    f1_weighted = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+    tpr_weighted = recall_score(y_true, y_pred, average='weighted', zero_division=0)
+    precision_weighted = precision_score(y_true, y_pred, average='weighted', zero_division=0)
+    
+    # Per-class metrics
+    f1_per_class = f1_score(y_true, y_pred, average=None, zero_division=0)
+    tpr_per_class = recall_score(y_true, y_pred, average=None, zero_division=0)
+    
+    # Class distribution
+    unique, counts = np.unique(y_true, return_counts=True)
+    class_distribution = dict(zip(unique.tolist(), counts.tolist()))
     
     return {
         'accuracy': float(accuracy),
+        'balanced_accuracy': float(balanced_acc),
         'mcc': float(mcc),
-        'tpr': float(np.mean(tpr_per_class)),
-        'f1': float(np.mean(f1_per_class))
+        'tpr': float(tpr_macro),  # Macro-averaged
+        'tpr_weighted': float(tpr_weighted),  # Weighted by support
+        'f1': float(f1_macro),  # Macro-averaged
+        'f1_weighted': float(f1_weighted),  # Weighted by support
+        'precision': float(precision_macro),
+        'precision_weighted': float(precision_weighted),
+        'f1_per_class_std': float(np.std(f1_per_class)),  # Variance in F1
+        'tpr_per_class_std': float(np.std(tpr_per_class)),  # Variance in TPR
+        'class_distribution': class_distribution
     }
 
 def evaluate_model(model, test_loader, device, num_classes: int) -> Dict[str, float]:
@@ -247,17 +255,13 @@ def attack_model(model, test_loader, device, num_classes: int,
         elif attack_mode == 'random':
             flip_result = _random_flip_one_bit(model)
         elif attack_mode == 'pbs2random':
-            # First half PBS, second half random
-            if i < attack_iters // 2:
-                flip_result = _progressive_bit_search(model, criterion, calib_x, calib_y)
-            else:
-                flip_result = _random_flip_one_bit(model)
+            # Each iteration: PBS first, then RANDOM (like original code)
+            _ = _progressive_bit_search(model, criterion, calib_x, calib_y)
+            flip_result = _random_flip_one_bit(model)
         elif attack_mode == 'random2pbs':
-            # First half random, second half PBS
-            if i < attack_iters // 2:
-                flip_result = _random_flip_one_bit(model)
-            else:
-                flip_result = _progressive_bit_search(model, criterion, calib_x, calib_y)
+            # Each iteration: RANDOM first, then PBS (like original code)
+            _ = _random_flip_one_bit(model)
+            flip_result = _progressive_bit_search(model, criterion, calib_x, calib_y)
         else:
             raise ValueError(f"Unknown attack mode: {attack_mode}")
         
@@ -321,10 +325,15 @@ def run_experiments(model_name: str, dataset_name: str, device: str = 'cuda',
     results['baseline'] = baseline_metrics
     
     print(f"Baseline Metrics:")
-    print(f"  Accuracy: {baseline_metrics['accuracy']:.4f}")
-    print(f"  F1-Score: {baseline_metrics['f1']:.4f}")
-    print(f"  TPR:      {baseline_metrics['tpr']:.4f}")
-    print(f"  MCC:      {baseline_metrics['mcc']:.4f}")
+    print(f"  Accuracy:          {baseline_metrics['accuracy']:.4f}")
+    print(f"  Balanced Accuracy: {baseline_metrics['balanced_accuracy']:.4f}")
+    print(f"  F1-Score (macro):  {baseline_metrics['f1']:.4f}")
+    print(f"  F1-Score (weighted): {baseline_metrics['f1_weighted']:.4f}")
+    print(f"  TPR (macro):       {baseline_metrics['tpr']:.4f}")
+    print(f"  TPR (weighted):    {baseline_metrics['tpr_weighted']:.4f}")
+    print(f"  MCC:               {baseline_metrics['mcc']:.4f}")
+    print(f"  F1 per-class std:  {baseline_metrics['f1_per_class_std']:.4f}")
+    print(f"  Class distribution: {baseline_metrics['class_distribution']}")
     
     # Stage 2: Attack without defense
     print(f"\n{'='*60}")
@@ -339,10 +348,12 @@ def run_experiments(model_name: str, dataset_name: str, device: str = 'cuda',
         results['attack_no_defense'][attack_mode] = attack_metrics
         
         print(f"After Attack Metrics:")
-        print(f"  Accuracy: {attack_metrics['accuracy']:.4f} (Δ: {attack_metrics['accuracy'] - baseline_metrics['accuracy']:.4f})")
-        print(f"  F1-Score: {attack_metrics['f1']:.4f} (Δ: {attack_metrics['f1'] - baseline_metrics['f1']:.4f})")
-        print(f"  TPR:      {attack_metrics['tpr']:.4f} (Δ: {attack_metrics['tpr'] - baseline_metrics['tpr']:.4f})")
-        print(f"  MCC:      {attack_metrics['mcc']:.4f} (Δ: {attack_metrics['mcc'] - baseline_metrics['mcc']:.4f})")
+        print(f"  Accuracy:          {attack_metrics['accuracy']:.4f} (Δ: {attack_metrics['accuracy'] - baseline_metrics['accuracy']:.4f})")
+        print(f"  Balanced Accuracy: {attack_metrics['balanced_accuracy']:.4f} (Δ: {attack_metrics['balanced_accuracy'] - baseline_metrics['balanced_accuracy']:.4f})")
+        print(f"  F1-Score (macro):  {attack_metrics['f1']:.4f} (Δ: {attack_metrics['f1'] - baseline_metrics['f1']:.4f})")
+        print(f"  F1-Score (weighted): {attack_metrics['f1_weighted']:.4f} (Δ: {attack_metrics['f1_weighted'] - baseline_metrics['f1_weighted']:.4f})")
+        print(f"  TPR (macro):       {attack_metrics['tpr']:.4f} (Δ: {attack_metrics['tpr'] - baseline_metrics['tpr']:.4f})")
+        print(f"  MCC:               {attack_metrics['mcc']:.4f} (Δ: {attack_metrics['mcc'] - baseline_metrics['mcc']:.4f})")
     
     # Stage 3: Attack with OBFUS defense
     if obfus_config:
@@ -387,10 +398,11 @@ def run_experiments(model_name: str, dataset_name: str, device: str = 'cuda',
             print("Evaluating baseline WITH OBFUS (before attack)...")
             baseline_obfus_metrics = evaluate_model(obfus_model, test_loader, device, num_classes)
             print(f"Baseline WITH OBFUS:")
-            print(f"  Accuracy: {baseline_obfus_metrics['accuracy']:.4f} (Δ from no-OBFUS: {baseline_obfus_metrics['accuracy'] - baseline_metrics['accuracy']:.4f})")
-            print(f"  F1-Score: {baseline_obfus_metrics['f1']:.4f}")
-            print(f"  TPR:      {baseline_obfus_metrics['tpr']:.4f}")
-            print(f"  MCC:      {baseline_obfus_metrics['mcc']:.4f}")
+            print(f"  Accuracy:          {baseline_obfus_metrics['accuracy']:.4f} (Δ: {baseline_obfus_metrics['accuracy'] - baseline_metrics['accuracy']:.4f})")
+            print(f"  Balanced Accuracy: {baseline_obfus_metrics['balanced_accuracy']:.4f} (Δ: {baseline_obfus_metrics['balanced_accuracy'] - baseline_metrics['balanced_accuracy']:.4f})")
+            print(f"  F1-Score (macro):  {baseline_obfus_metrics['f1']:.4f} (Δ: {baseline_obfus_metrics['f1'] - baseline_metrics['f1']:.4f})")
+            print(f"  F1-Score (weighted): {baseline_obfus_metrics['f1_weighted']:.4f} (Δ: {baseline_obfus_metrics['f1_weighted'] - baseline_metrics['f1_weighted']:.4f})")
+            print(f"  MCC:               {baseline_obfus_metrics['mcc']:.4f} (Δ: {baseline_obfus_metrics['mcc'] - baseline_metrics['mcc']:.4f})")
             
             # Check if OBFUS broke the model
             if baseline_obfus_metrics['accuracy'] < 0.1:
@@ -406,10 +418,12 @@ def run_experiments(model_name: str, dataset_name: str, device: str = 'cuda',
             results['attack_with_obfus'][attack_mode]['baseline_with_obfus'] = baseline_obfus_metrics
             
             print(f"\nAfter Attack (with OBFUS) Metrics:")
-            print(f"  Accuracy: {attack_metrics['accuracy']:.4f} (Δ from OBFUS baseline: {attack_metrics['accuracy'] - baseline_obfus_metrics['accuracy']:.4f})")
-            print(f"  F1-Score: {attack_metrics['f1']:.4f} (Δ from OBFUS baseline: {attack_metrics['f1'] - baseline_obfus_metrics['f1']:.4f})")
-            print(f"  TPR:      {attack_metrics['tpr']:.4f} (Δ from OBFUS baseline: {attack_metrics['tpr'] - baseline_obfus_metrics['tpr']:.4f})")
-            print(f"  MCC:      {attack_metrics['mcc']:.4f} (Δ from OBFUS baseline: {attack_metrics['mcc'] - baseline_obfus_metrics['mcc']:.4f})")
+            print(f"  Accuracy:          {attack_metrics['accuracy']:.4f} (Δ: {attack_metrics['accuracy'] - baseline_obfus_metrics['accuracy']:.4f})")
+            print(f"  Balanced Accuracy: {attack_metrics['balanced_accuracy']:.4f} (Δ: {attack_metrics['balanced_accuracy'] - baseline_obfus_metrics['balanced_accuracy']:.4f})")
+            print(f"  F1-Score (macro):  {attack_metrics['f1']:.4f} (Δ: {attack_metrics['f1'] - baseline_obfus_metrics['f1']:.4f})")
+            print(f"  F1-Score (weighted): {attack_metrics['f1_weighted']:.4f} (Δ: {attack_metrics['f1_weighted'] - baseline_obfus_metrics['f1_weighted']:.4f})")
+            print(f"  MCC:               {attack_metrics['mcc']:.4f} (Δ: {attack_metrics['mcc'] - baseline_obfus_metrics['mcc']:.4f})")
+            print(f"  F1 per-class std:  {attack_metrics['f1_per_class_std']:.4f}")
     
     return results
 
