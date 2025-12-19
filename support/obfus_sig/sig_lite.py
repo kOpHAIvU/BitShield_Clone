@@ -85,8 +85,8 @@ class SigLiteMonitor:
             y = y.to(self.device)
         return x, y
 
-    @torch.no_grad()
     def _compute_probs(self, logits: torch.Tensor) -> torch.Tensor:
+        """Compute probabilities from logits (WITH gradient for training)"""
         return F.softmax(logits, dim=-1)
 
     def _compute_kl_uniform(self, probs: torch.Tensor) -> torch.Tensor:
@@ -101,9 +101,12 @@ class SigLiteMonitor:
 
     def _compute_grad_norm(self, kl: torch.Tensor) -> torch.Tensor:
         # Compute gradient of KL wrt last layer weights
+        # Clear any existing gradients
         for p in self.model.parameters():
             if p.grad is not None:
                 p.grad = None
+        
+        # Compute gradient
         grad_w = torch.autograd.grad(
             kl, self.last_layer.weight, retain_graph=False, allow_unused=False, create_graph=False
         )[0]
@@ -121,18 +124,26 @@ class SigLiteMonitor:
         """
         Run a few probe steps on a clean model to calibrate thresholds.
         """
-        self.model.eval()
+        # Enable gradient computation for weights
+        for p in self.model.parameters():
+            p.requires_grad_(True)
+        
+        self.model.train()  # Set to train mode to enable gradients
         kl_vals = []
         gn_vals = []
-        with torch.enable_grad():
-            for _ in range(steps):
-                x, _ = self._next_probe_batch()
-                logits = self.model(x)
-                probs = self._compute_probs(logits)
-                kl = self._compute_kl_uniform(probs)
-                gn = self._compute_grad_norm(kl)
-                kl_vals.append(kl.detach())
-                gn_vals.append(gn.detach())
+        
+        for _ in range(steps):
+            x, _ = self._next_probe_batch()
+            # Forward pass with gradient enabled
+            logits = self.model(x)
+            probs = self._compute_probs(logits)  # Now computes with gradient
+            kl = self._compute_kl_uniform(probs)
+            gn = self._compute_grad_norm(kl)
+            kl_vals.append(kl.detach())
+            gn_vals.append(gn.detach())
+        
+        # Reset to eval mode after calibration
+        self.model.eval()
         kl_tensor = torch.stack(kl_vals)
         gn_tensor = torch.stack(gn_vals)
         self.kl_med, self.kl_mad = _median_and_mad(kl_tensor)
