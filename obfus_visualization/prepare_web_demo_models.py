@@ -16,9 +16,10 @@ import copy
 from tqdm import tqdm
 import argparse
 
-# Add project root to path
+# Add project root to path and change to project root directory
 project_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.append(project_root)
+os.chdir(project_root)  # Ensure we're in project root for dataset paths
 
 import cfg
 from support import models
