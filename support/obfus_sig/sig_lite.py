@@ -1,9 +1,18 @@
 import math
-from typing import Dict, Optional, Tuple, Literal
+from typing import Dict, Optional, Tuple, Literal, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+# Import quantized layers for detection
+try:
+    from support.models.quantized_layers import quan_Conv1d, quan_Linear, CustomBlock
+    QUANT_LINEAR_TYPES = (nn.Linear, quan_Linear)
+    QUANT_CONV_TYPES = (nn.Conv1d, nn.Conv2d, quan_Conv1d)
+except ImportError:
+    QUANT_LINEAR_TYPES = (nn.Linear,)
+    QUANT_CONV_TYPES = (nn.Conv1d, nn.Conv2d)
 
 
 def _median_and_mad(values: torch.Tensor) -> Tuple[float, float]:
@@ -12,10 +21,15 @@ def _median_and_mad(values: torch.Tensor) -> Tuple[float, float]:
     return med, mad
 
 
-def _find_last_linear(model: nn.Module) -> Optional[nn.Linear]:
+def _find_last_linear(model: nn.Module) -> Optional[Union[nn.Linear, nn.Module]]:
+    """Find the last Linear or Conv layer (including quantized versions)"""
     last = None
     for m in model.modules():
-        if isinstance(m, nn.Linear):
+        # Check for Linear layers (including quan_Linear)
+        if isinstance(m, QUANT_LINEAR_TYPES):
+            last = m
+        # Also check for Conv layers as fallback (including quan_Conv1d)
+        elif isinstance(m, QUANT_CONV_TYPES):
             last = m
     return last
 
@@ -44,7 +58,7 @@ class SigLiteMonitor:
         self.device = device or next(model.parameters()).device
         self.last_layer = _find_last_linear(model)
         if self.last_layer is None:
-            raise ValueError("SigLiteMonitor requires a model with a final nn.Linear layer.")
+            raise ValueError("SigLiteMonitor requires a model with a final Linear/Conv layer (nn.Linear, quan_Linear, nn.Conv1d, quan_Conv1d).")
         self._probe_iter = None
         # Baseline thresholds
         self.kl_med = None
@@ -71,8 +85,8 @@ class SigLiteMonitor:
             y = y.to(self.device)
         return x, y
 
-    @torch.no_grad()
     def _compute_probs(self, logits: torch.Tensor) -> torch.Tensor:
+        """Compute probabilities from logits (WITH gradient for training)"""
         return F.softmax(logits, dim=-1)
 
     def _compute_kl_uniform(self, probs: torch.Tensor) -> torch.Tensor:
@@ -107,18 +121,26 @@ class SigLiteMonitor:
         """
         Run a few probe steps on a clean model to calibrate thresholds.
         """
-        self.model.eval()
+        # Enable gradient computation for weights
+        for p in self.model.parameters():
+            p.requires_grad_(True)
+        
+        self.model.train()  # Set to train mode to enable gradients
         kl_vals = []
         gn_vals = []
-        with torch.enable_grad():
-            for _ in range(steps):
-                x, _ = self._next_probe_batch()
-                logits = self.model(x)
-                probs = self._compute_probs(logits)
-                kl = self._compute_kl_uniform(probs)
-                gn = self._compute_grad_norm(kl)
-                kl_vals.append(kl.detach())
-                gn_vals.append(gn.detach())
+        
+        for _ in range(steps):
+            x, _ = self._next_probe_batch()
+            # Forward pass with gradient enabled
+            logits = self.model(x)
+            probs = self._compute_probs(logits)  # Now computes with gradient
+            kl = self._compute_kl_uniform(probs)
+            gn = self._compute_grad_norm(kl)
+            kl_vals.append(kl.detach())
+            gn_vals.append(gn.detach())
+        
+        # Reset to eval mode after calibration
+        self.model.eval()
         kl_tensor = torch.stack(kl_vals)
         gn_tensor = torch.stack(gn_vals)
         self.kl_med, self.kl_mad = _median_and_mad(kl_tensor)
