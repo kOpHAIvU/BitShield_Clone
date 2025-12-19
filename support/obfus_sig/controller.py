@@ -16,13 +16,11 @@ class ControllerPolicy:
         self,
         alert_mode: str = "or",  # "or" or "and"
         cooldown_steps: int = 1000,
-        proactive_period: int = 0,
     ) -> None:
         assert alert_mode in ("or", "and")
         self.alert_mode = alert_mode
         self.cooldown_steps = int(cooldown_steps)
-        self.proactive_period = max(0, int(proactive_period))
-        self._last_reseed_step = -10**9
+        self._last_action_step = -10**9
         self._step = 0
         self._adapters: List[ObfusPair] = []
         self._shadow_model: Optional[nn.Module] = None
@@ -38,13 +36,11 @@ class ControllerPolicy:
         values = list(alerts.values())
         if not values:
             return False
-        fire = any(v > 0 for v in values) if self.alert_mode == "or" else all(v > 0 for v in values)
-        return fire and (self._step - self._last_reseed_step >= self.cooldown_steps)
-
-    def _perform_reseed(self) -> None:
-        for adapter in self._adapters:
-            adapter.reseed()
-        self._last_reseed_step = self._step
+        if self.alert_mode == "or":
+            fire = any(v > 0 for v in values)
+        else:
+            fire = all(v > 0 for v in values)
+        return fire and (self._step - self._last_action_step >= self.cooldown_steps)
 
     def step(self, metrics: Dict[str, object]) -> Dict[str, object]:
         """
@@ -56,11 +52,11 @@ class ControllerPolicy:
         }
         action_taken = "none"
         if self._should_act(alerts):
-            self._perform_reseed()
-            action_taken = "reseed_adapters_alert"
-        elif self.proactive_period > 0 and (self._step - self._last_reseed_step) >= self.proactive_period:
-            self._perform_reseed()
-            action_taken = "reseed_adapters_proactive"
+            # Prioritize reseed
+            for a in self._adapters:
+                a.reseed()
+            action_taken = "reseed_adapters"
+            self._last_action_step = self._step
         # Optionally escalate to shadow switch if repeated alerts (not implemented escalation logic here)
         log_entry = {
             "t": time.time(),

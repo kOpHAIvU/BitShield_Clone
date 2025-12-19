@@ -42,7 +42,6 @@ class ObfusSigRuntime:
         max_obfus_layers: Optional[int] = None,
         initial_reseed: bool = True,
         proactive_reseed_period: int = 0,
-        allow_fallback: bool = True,
     ) -> None:
         self.device = device or next(model.parameters()).device
         self.model, adapters = wrap_model_with_obfus(
@@ -50,7 +49,6 @@ class ObfusSigRuntime:
             targets=obfus_targets,
             max_wrapped=max_obfus_layers,
             seed=None,
-            allow_fallback=allow_fallback,
         )
         self.adapters: List[ObfusPair] = adapters
         if initial_reseed:
