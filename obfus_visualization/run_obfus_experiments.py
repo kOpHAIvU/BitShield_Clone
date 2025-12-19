@@ -423,7 +423,6 @@ def run_experiments(model_name: str, dataset_name: str, device: str = 'cuda',
                 max_obfus_layers=obfus_config.get('max_obfus_layers', None),
                 initial_reseed=obfus_config.get('initial_reseed', False),
                 proactive_reseed_period=obfus_config.get('proactive_reseed_period', 10),
-                allow_fallback=obfus_config.get('allow_fallback', True),
                 device=device
             )
             
@@ -515,8 +514,7 @@ if __name__ == '__main__':
             'obfus_targets': args.obfus_targets.split(','),
             'max_obfus_layers': args.obfus_max_layers,
             'initial_reseed': args.obfus_initial_reseed,
-            'proactive_reseed_period': args.obfus_auto_reseed,
-            'allow_fallback': True
+            'proactive_reseed_period': args.obfus_auto_reseed
         }
     
     results = run_experiments(
