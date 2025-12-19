@@ -61,26 +61,46 @@ def load_web_demo_model(model_name: str, dataset_name: str, model_type: str,
             with open(obfus_config_path, 'r') as f:
                 obfus_config = json.load(f)
             
-            # Initialize OBFUS runtime
-            obfus_runtime = ObfusSigRuntime(
-                model=model,
-                sig_period=obfus_config.get('sig_period', 500),
-                sig_k=obfus_config.get('sig_k', 3.0),
-                grad_norm_type=obfus_config.get('grad_norm_type', 'l1'),
-                normalize_grad=obfus_config.get('normalize_grad', True),
-                fp_threshold=obfus_config.get('fp_threshold', 0.1),
-                fp_entropy_threshold=obfus_config.get('fp_entropy_threshold', 0.15),
-                make_shadow=obfus_config.get('make_shadow', False),
-                obfus_targets=obfus_config.get('obfus_targets', ['linear', 'conv1d']),
-                max_obfus_layers=obfus_config.get('max_obfus_layers', 3),
-                initial_reseed=False,
-                proactive_reseed_period=0,
-                allow_fallback=True,
-                device=device
-            )
+            # Note: OBFUS runtime needs probe_loader for initialization
+            # For web demo, you may need to provide a calibration loader
+            # For now, we'll create a dummy loader or skip runtime initialization
+            # The protected model can still be used without runtime for inference
             
-            # Calibrate (you may need calibration data for this)
-            # obfus_runtime.calibrate()
+            # Try to create a minimal probe loader (you may need to adjust this)
+            try:
+                from support.dataman_extended import get_benign_loader_extended
+                # Create a small probe loader for calibration
+                probe_loader = get_benign_loader_extended(
+                    dataset_name, image_size=None, split='train', 
+                    batch_size=32, shuffle=False, num_workers=0
+                )
+                
+                # Initialize OBFUS runtime
+                obfus_runtime = ObfusSigRuntime(
+                    model=model,
+                    probe_loader=probe_loader,  # Required!
+                    alert_mode=obfus_config.get('alert_mode', 'or'),
+                    sig_period=obfus_config.get('sig_period', 500),
+                    sig_k=obfus_config.get('sig_k', 3.0),
+                    grad_norm_type=obfus_config.get('grad_norm_type', 'l1'),
+                    normalize_grad=obfus_config.get('normalize_grad', True),
+                    fp_threshold=obfus_config.get('fp_threshold', 0.1),
+                    fp_entropy_threshold=obfus_config.get('fp_entropy_threshold', 0.15),
+                    make_shadow=obfus_config.get('make_shadow', False),
+                    obfus_targets=obfus_config.get('obfus_targets', ['linear', 'conv1d']),
+                    max_obfus_layers=obfus_config.get('max_obfus_layers', 3),
+                    initial_reseed=False,
+                    proactive_reseed_period=0,
+                    device=device
+                )
+                
+                # Calibrate (you may need calibration data for this)
+                # obfus_runtime.calibrate()
+            except Exception as e:
+                print(f"⚠️  Warning: Could not initialize OBFUS runtime: {e}")
+                print("   Protected model loaded but OBFUS runtime not initialized")
+                print("   Model can still be used for inference, but alerts won't work")
+                obfus_runtime = None
         else:
             print(f"⚠️  Warning: OBFUS config not found at {obfus_config_path}")
             print("   Protected model loaded but OBFUS runtime not initialized")

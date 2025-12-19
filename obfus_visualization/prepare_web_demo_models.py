@@ -293,9 +293,11 @@ def prepare_web_demo_models(model_name: str, dataset_name: str,
     print("\nStep 8: Creating protected model with OBFUS...")
     protected_model, _ = load_model(model_name, dataset_name, device)  # Fresh copy
     
-    # Initialize OBFUS-SIG
+    # Initialize OBFUS-SIG (needs probe_loader for calibration)
     obfus_runtime = ObfusSigRuntime(
         model=protected_model,
+        probe_loader=calib_loader,  # Required: DataLoader for calibration
+        alert_mode='or',
         sig_period=500,
         sig_k=3.0,
         grad_norm_type='l1',
@@ -307,7 +309,6 @@ def prepare_web_demo_models(model_name: str, dataset_name: str,
         max_obfus_layers=3,
         initial_reseed=False,  # Don't reseed immediately
         proactive_reseed_period=0,  # No proactive reseed
-        allow_fallback=True,
         device=device
     )
     
