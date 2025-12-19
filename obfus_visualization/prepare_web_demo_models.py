@@ -249,10 +249,12 @@ def prepare_web_demo_models(model_name: str, dataset_name: str,
     
     # Get data loaders
     print("Step 2: Loading datasets...")
-    test_loader = get_benign_loader_extended(dataset_name, 32, 'test', batch_size=128, 
-                                            shuffle=False, num_workers=0, image_size=None)
-    calib_loader = get_benign_loader_extended(dataset_name, 32, 'train', batch_size=128, 
-                                              shuffle=True, num_workers=0, image_size=None)
+    # For tabular datasets (IoTID20, CICIoT2023), image_size should be None
+    # For image datasets, image_size would be a tuple like (32, 32)
+    test_loader = get_benign_loader_extended(dataset_name, image_size=None, split='test', 
+                                            batch_size=128, shuffle=False, num_workers=0)
+    calib_loader = get_benign_loader_extended(dataset_name, image_size=None, split='train', 
+                                              batch_size=128, shuffle=True, num_workers=0)
     
     criterion = torch.nn.CrossEntropyLoss()
     
