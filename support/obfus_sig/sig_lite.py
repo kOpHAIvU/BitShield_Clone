@@ -1,9 +1,18 @@
 import math
-from typing import Dict, Optional, Tuple, Literal
+from typing import Dict, Optional, Tuple, Literal, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+# Import quantized layers for detection
+try:
+    from support.models.quantized_layers import quan_Conv1d, quan_Linear, CustomBlock
+    QUANT_LINEAR_TYPES = (nn.Linear, quan_Linear)
+    QUANT_CONV_TYPES = (nn.Conv1d, nn.Conv2d, quan_Conv1d)
+except ImportError:
+    QUANT_LINEAR_TYPES = (nn.Linear,)
+    QUANT_CONV_TYPES = (nn.Conv1d, nn.Conv2d)
 
 
 def _median_and_mad(values: torch.Tensor) -> Tuple[float, float]:
@@ -12,10 +21,15 @@ def _median_and_mad(values: torch.Tensor) -> Tuple[float, float]:
     return med, mad
 
 
-def _find_last_linear(model: nn.Module) -> Optional[nn.Linear]:
+def _find_last_linear(model: nn.Module) -> Optional[Union[nn.Linear, nn.Module]]:
+    """Find the last Linear or Conv layer (including quantized versions)"""
     last = None
     for m in model.modules():
-        if isinstance(m, nn.Linear):
+        # Check for Linear layers (including quan_Linear)
+        if isinstance(m, QUANT_LINEAR_TYPES):
+            last = m
+        # Also check for Conv layers as fallback (including quan_Conv1d)
+        elif isinstance(m, QUANT_CONV_TYPES):
             last = m
     return last
 
@@ -44,7 +58,7 @@ class SigLiteMonitor:
         self.device = device or next(model.parameters()).device
         self.last_layer = _find_last_linear(model)
         if self.last_layer is None:
-            raise ValueError("SigLiteMonitor requires a model with a final nn.Linear layer.")
+            raise ValueError("SigLiteMonitor requires a model with a final Linear/Conv layer (nn.Linear, quan_Linear, nn.Conv1d, quan_Conv1d).")
         self._probe_iter = None
         # Baseline thresholds
         self.kl_med = None
