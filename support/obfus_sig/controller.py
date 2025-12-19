@@ -11,16 +11,20 @@ class ControllerPolicy:
     Fuse alerts from SigLite and BitFingerprint and trigger actions:
     - reseed all registered ObfusPairs
     - optionally switch to a shadow model
+    - optional proactive reseeding even without alerts
     """
     def __init__(
         self,
         alert_mode: str = "or",  # "or" or "and"
         cooldown_steps: int = 1000,
+        proactive_period: int = 0,  # NEW: Reseed every N steps (0 = disabled)
     ) -> None:
         assert alert_mode in ("or", "and")
         self.alert_mode = alert_mode
         self.cooldown_steps = int(cooldown_steps)
+        self.proactive_period = int(proactive_period)  # NEW
         self._last_action_step = -10**9
+        self._last_proactive_step = -10**9  # NEW: Track last proactive reseed
         self._step = 0
         self._adapters: List[ObfusPair] = []
         self._shadow_model: Optional[nn.Module] = None
@@ -51,12 +55,22 @@ class ControllerPolicy:
             "fp": int(metrics.get("fp_alert", 0)),  # type: ignore[arg-type]
         }
         action_taken = "none"
+        
+        # Check for alert-based action
         if self._should_act(alerts):
-            # Prioritize reseed
+            # Reseed adapters on alert
             for a in self._adapters:
                 a.reseed()
-            action_taken = "reseed_adapters"
+            action_taken = "reseed_adapters_alert"
             self._last_action_step = self._step
+        # Check for proactive reseeding (even without alerts)
+        elif self.proactive_period > 0 and (self._step - self._last_proactive_step >= self.proactive_period):
+            # Proactive reseed
+            for a in self._adapters:
+                a.reseed()
+            action_taken = "reseed_adapters_proactive"
+            self._last_proactive_step = self._step
+        
         # Optionally escalate to shadow switch if repeated alerts (not implemented escalation logic here)
         log_entry = {
             "t": time.time(),
