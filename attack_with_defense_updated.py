@@ -14,6 +14,7 @@ import numpy as np
 import json
 from support import torchdig
 from support import torchdig_tabular
+from utils_excel import append_to_excel
 
 def ensure_dir_of(filepath):
     dirpath = os.path.dirname(filepath)
@@ -147,6 +148,19 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu'):
             'detection_rate': detection_rate
         })
         
+        # Record to Excel
+        excel_data = {
+            'Dataset': dataset_name,
+            'Model': model_name,
+            'Attack Strength': strength,
+            'Original Accuracy': original_accuracy,
+            'Accuracy After Attack': accuracy_after,
+            'Accuracy Drop': original_accuracy - accuracy_after,
+            'Detection Rate': detection_rate,
+            'Defense Type': 'DIG'
+        }
+        append_to_excel('results/combined_metrics.xlsx', excel_data)
+        
         print(f"  Accuracy after attack: {accuracy_after:.2f}%")
         print(f"  DIG detection rate: {detection_rate:.2f}%")
         
@@ -272,6 +286,19 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu'):
             'total_params_checked': total_params
         })
         
+        # Record to Excel
+        excel_data = {
+            'Dataset': dataset_name,
+            'Model': model_name,
+            'Attack Strength': strength,
+            'Original Accuracy': original_accuracy,
+            'Accuracy After Attack': accuracy_after,
+            'Accuracy Drop': original_accuracy - accuracy_after,
+            'Detection Rate': cig_detection_rate,
+            'Defense Type': 'CIG'
+        }
+        append_to_excel('results/combined_metrics.xlsx', excel_data)
+        
         print(f"  Accuracy after attack: {accuracy_after:.2f}%")
         print(f"  CIG detection rate: {cig_detection_rate:.2f}%")
     
@@ -330,6 +357,22 @@ def attack_with_combined_protection(model_name, dataset_name, device='cpu'):
             'combined_detection': combined_detection,
             'improvement': combined_detection - max(dig_detection, cig_detection)
         })
+        
+        # Record Combined result to Excel
+        # Assuming accuracy_after is available from dig_results (roughly same for same strength attack on same model)
+        # Note: dig_res contains 'accuracy_after'
+        
+        excel_data = {
+            'Dataset': dataset_name,
+            'Model': model_name,
+            'Attack Strength': strength,
+            'Original Accuracy': dig_results['original_accuracy'],
+            'Accuracy After Attack': dig_res['accuracy_after'],
+            'Accuracy Drop': dig_res['accuracy_drop'],
+            'Detection Rate': combined_detection,
+            'Defense Type': 'Combined (DIG+CIG)'
+        }
+        append_to_excel('results/combined_metrics.xlsx', excel_data)
     
     # Save combined results
     output_dir = 'results/defense_results'

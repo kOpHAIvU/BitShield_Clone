@@ -1,0 +1,247 @@
+=============================================================================
+POWERPOINT SLIDE TEMPLATE - RANDOM ATTACK FOCUS
+=============================================================================
+
+SLIDE 1: TITLE SLIDE
+─────────────────────
+[Title]
+OBFUS Defense Against Random Bit Flip Attack
+on AI-NIDS for IoT Devices
+
+[Subtitle]
+Focus on Practical, Real-World Attack Scenarios
+
+[Team/Author]
+[Your Name] | [Advisor Name]
+[University] | [Date]
+
+
+SLIDE 2: WHY RANDOM ATTACK?
+────────────────────────────
+[Title]
+Tại Sao Tập Trung Vào Random Bit Flip Attack?
+
+[Content - 2 columns]
+
+┌─ PBS Attack ──────────────┐  ┌─ Random Attack ─────────────┐
+│ ❌ Theoretical            │  │ ✅ Practical                │
+│ ❌ Requires model access  │  │ ✅ Blind attack             │
+│ ❌ High computational cost│  │ ✅ Low cost                 │
+│ ❌ Not realistic          │  │ ✅ Realistic (70-80%)       │
+│ ✅ Very strong            │  │ ⚠️  Moderate strength       │
+└───────────────────────────┘  └─────────────────────────────┘
+
+[Bottom Box - Highlighted]
+🎯 Focus: Random Attack - Đại diện cho tấn công THỰC TẾ nhất
+
+[Speaker Notes]
+"PBS mạnh về lý thuyết, nhưng Random đại diện cho 70-80% tấn công thực tế"
+
+
+SLIDE 3: RANDOM ATTACK - 4 ĐIỂM MẠNH
+─────────────────────────────────────
+[Title]
+Random Bit Flip Attack: 4 Điểm Mạnh Quan Trọng
+
+[Content - 4 boxes in 2x2 grid]
+
+┌─────────────────────────────────┬─────────────────────────────────┐
+│ 1. ✅ REALISTIC (Thực Tế)      │ 2. ✅ PRACTICAL (Khả Thi)      │
+│                                 │                                 │
+│ • Lỗi phần cứng tự nhiên       │ • Không cần biết cấu trúc model│
+│ • Rowhammer attack             │ • Chi phí thấp                 │
+│ • DRAM errors, SEU             │ • Dễ thực hiện                 │
+│ • 70-80% tấn công thực tế      │ • Không cần gradient/loss      │
+├─────────────────────────────────┼─────────────────────────────────┤
+│ 3. 🕵️ STEALTHY (Khó Phát Hiện)│ 4. 📈 COMMON (Phổ Biến)        │
+│                                 │                                 │
+│ • Thay đổi nhỏ, từ từ          │ • Phổ biến nhất trên IoT       │
+│ • Giống lỗi tự nhiên           │ • Hardware aging               │
+│ • Khó phân biệt                │ • Radiation-induced            │
+│ • Low profile                  │ • Natural occurrences          │
+└─────────────────────────────────┴─────────────────────────────────┘
+
+[Bottom Box]
+➡️  OBFUS cần hiệu quả với Random để bảo vệ thực tế!
+
+[Speaker Notes]
+"4 điểm mạnh: Realistic, Practical, Stealthy, Common. 
+Nếu không chống được Random, không thể deploy trong thực tế."
+
+
+SLIDE 4: KẾT QUẢ THỰC NGHIỆM
+─────────────────────────────
+[Title]
+Kết Quả: OBFUS vs Random Attack (ResNetSEBlockIoT, IoTID20)
+
+[Main Visual - Bar Chart]
+
+    Accuracy (%)
+    100 ┤
+     95 ┤  ▓▓▓▓▓▓
+        │  ▓▓▓▓▓▓ 92.5%        ▓▓▓▓▓▓
+     90 ┤  ▓▓▓▓▓▓               ▓▓▓▓▓▓ 89.7% ✅
+        │  ▓▓▓▓▓▓               ▓▓▓▓▓▓
+     85 ┤  ▓▓▓▓▓▓               ▓▓▓▓▓▓
+        │  ▓▓▓▓▓▓               ▓▓▓▓▓▓
+     80 ┤  ▓▓▓▓▓▓  ░░░░░░       ▓▓▓▓▓▓
+        │  ▓▓▓▓▓▓  ░░░░░░       ▓▓▓▓▓▓
+     75 ┤  ▓▓▓▓▓▓  ░░░░░░ 78.1%▓▓▓▓▓▓
+     70 ┤  ▓▓▓▓▓▓  ░░░░░░  ❌  ▓▓▓▓▓▓
+      0 └──────────────────────────────
+        Baseline  No Def  With OBFUS
+
+[Metrics Box]
+┌────────────────────────────────────────────┐
+│ ✅ Mitigation: 81% impact (14.4% → 2.8%)  │
+│ ✅ Detection Rate: 75%                     │
+│ ✅ False Positive: <5%                     │
+│ ✅ Overhead: 15-20%                        │
+└────────────────────────────────────────────┘
+
+[Speaker Notes]
+"Random gây drop 14.4%, OBFUS recovery lên 89.7%, chỉ drop 2.8%.
+Mitigation 81% impact - chứng minh hiệu quả!"
+
+
+SLIDE 5: SO SÁNH RANDOM VS PBS
+───────────────────────────────
+[Title]
+So Sánh: OBFUS Effectiveness với Random vs PBS
+
+[Table]
+┌──────────────────┬──────────┬──────────┬─────────────┐
+│ Metric           │   PBS    │  Random  │   Winner    │
+├──────────────────┼──────────┼──────────┼─────────────┤
+│ Attack Strength  │ Strongest│ Moderate │ PBS         │
+│ Realism          │    ❌    │    ✅    │ Random 🏆   │
+│ Accuracy Drop    │  47.3%   │  14.4%   │ Random      │
+│ OBFUS Recovery   │  88.3%   │  89.7%   │ Random 🏆   │
+│ Detection Rate   │   95%    │   75%    │ PBS         │
+│ Practical Value  │  Theory  │ Practice │ Random 🏆   │
+└──────────────────┴──────────┴──────────┴─────────────┘
+
+[Key Insight Box - Highlighted]
+🎯 Accuracy sau OBFUS: Random (89.7%) > PBS (88.3%)
+   → OBFUS hoạt động TỐT NHẤT với kịch bản thực tế!
+
+[Speaker Notes]
+"Đặc biệt, accuracy với Random cao hơn PBS. 
+OBFUS hiệu quả nhất với practical attack."
+
+
+SLIDE 6: TẠI SAO OBFUS HIỆU QUẢ?
+─────────────────────────────────
+[Title]
+Cơ Chế: Tại Sao OBFUS Hiệu Quả Với Random Attack?
+
+[Content - 4 components]
+
+1. 📊 SIG MONITOR (KL + Gradient Norm)
+   → Random: Cumulative changes dễ phát hiện
+   → Pattern nhất quán qua iterations
+
+2. 🔍 BIT FINGERPRINT (PSI + Entropy)
+   → Random: Distribution drift predictable
+   → PSI threshold hiệu quả
+
+3. 🔄 ADAPTIVE RESEEDING
+   → Random: Moderate severity
+   → Reseed kịp thời để recover
+
+4. ⚖️  BALANCED TRADE-OFF
+   → Detection 75% (đủ để protect)
+   → False Positive <5% (excellent)
+   → Overhead 15-20% (acceptable)
+
+[Bottom Box]
+🎯 Random attack = "Sweet spot" cho OBFUS!
+
+[Speaker Notes]
+"Random tạo pattern nhất quán, OBFUS dễ detect.
+Trade-off tối ưu nhất cho deployment thực tế."
+
+
+SLIDE 7: KẾT LUẬN
+──────────────────
+[Title]
+Kết Luận: OBFUS - Giải Pháp Khả Thi Cho IoT Defense
+
+[Content - 3 main points]
+
+1. ✅ CHỨNG MINH HIỆU QUẢ VỚI PRACTICAL ATTACK
+   • Random attack: 70-80% tấn công thực tế
+   • Mitigation 81% impact (14.4% → 2.8%)
+   • Recovery xuất sắc: 89.7% accuracy
+
+2. ✅ SWEET SPOT CHO OBFUS DEPLOYMENT
+   • Detection rate: 75% (đủ để protect)
+   • False positive: <5% (không ảnh hưởng clean)
+   • Overhead: 15-20% (chấp nhận được)
+
+3. ✅ HƯỚNG NGHIÊN CỨU THỰC TẾ
+   • Focus vào practical attacks (Random)
+   • Thay vì theoretical worst-case (PBS)
+   • Sẵn sàng deploy trên IoT devices
+
+[Bottom Statement - Large, Bold]
+🎯 OBFUS là giải pháp KHẢ THI cho bảo vệ AI-NIDS
+   trên IoT devices trong THỰC TẾ!
+
+[Speaker Notes]
+"Nghiên cứu chứng minh OBFUS khả thi để deploy.
+Focus vào Random - đúng hướng cho practical deployment."
+
+
+SLIDE 8: THANK YOU / Q&A
+─────────────────────────
+[Title]
+Thank You!
+
+[Content]
+Questions & Answers
+
+[Contact Info]
+[Your Email]
+[GitHub/Project Link]
+
+[Prepared Backup]
+• Detailed mechanism slides
+• Additional experiments
+• Related work comparison
+
+=============================================================================
+
+DESIGN NOTES:
+─────────────
+• Color Scheme:
+  - Green (🟢): Baseline, Success, OBFUS
+  - Red (🔴): Attack, Degradation
+  - Blue (🔵): Recovery, Protection
+  - Yellow (🟡): Warnings, Trade-offs
+
+• Font:
+  - Title: 44pt, Bold
+  - Headers: 32pt, Bold
+  - Body: 24pt, Regular
+  - Emphasis: 28pt, Bold
+
+• Layout:
+  - Use 2-column layout for comparisons
+  - Highlight boxes for key insights
+  - Visual charts for numerical data
+  - Icons/emojis for quick recognition
+
+• Animation (Optional):
+  - Build slides progressively
+  - Highlight key numbers when discussing
+  - Reveal metrics one by one for emphasis
+
+=============================================================================
+
+
+
+
+
+
+
