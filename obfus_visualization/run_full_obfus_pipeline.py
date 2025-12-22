@@ -66,37 +66,54 @@ def main():
     print(f"Output: {output_json}")
     print(f"{'='*70}\n")
     
-    # Step 1: Run experiments
-    print("\n" + "="*70)
-    print("STEP 1: Running Experiments")
-    print("="*70 + "\n")
+    print(f"Output: {output_json}")
+    print(f"{'='*70}\n")
     
-    cmd = f"python obfus_visualization/run_obfus_experiments.py {args.model} {args.dataset} " \
-          f"--device {args.device} " \
-          f"--attack-iters {args.attack_iters} " \
-          f"--attack-modes {args.attack_modes} " \
-          f"--with-obfus " \
-          f"--sig-period {args.sig_period} " \
-          f"--sig-k {args.sig_k} " \
-          f"--obfus-targets {args.obfus_targets} " \
-          f"--obfus-auto-reseed {args.obfus_auto_reseed} " \
-          f"--output {output_json}"
+    # Handle multiple models
+    models = args.model.split(',')
+    if args.model.lower() == 'all':
+        models = ['ResNetSEBlockIoT', 'SimpleCNNIoT'] # Add more models if needed
     
-    if args.obfus_max_layers is not None:
-        cmd += f" --obfus-max-layers {args.obfus_max_layers}"
-    
-    if args.obfus_initial_reseed:
-        cmd += " --obfus-initial-reseed"
-    
-    run_command(cmd)
-    
-    # Step 2: Generate visualizations
-    print("\n" + "="*70)
-    print("STEP 2: Generating Visualizations")
-    print("="*70 + "\n")
-    
-    cmd = f"python obfus_visualization/visualize_obfus_results.py {output_json}"
-    run_command(cmd)
+    for model_name in models:
+        model_name = model_name.strip()
+        print(f"\n>>> Running pipeline for model: {model_name}")
+        
+        # Output file per model
+        output_json = f'results/obfus_experiments/{args.dataset}_{model_name}_obfus_experiment.json'
+
+        # Step 1: Run experiments
+        print("\n" + "="*70)
+        print(f"STEP 1: Running Experiments for {model_name}")
+        print("="*70 + "\n")
+        
+        cmd = f"python obfus_visualization/run_obfus_experiments.py {model_name} {args.dataset} " \
+              f"--device {args.device} " \
+              f"--attack-iters {args.attack_iters} " \
+              f"--attack-modes {args.attack_modes} " \
+              f"--with-obfus " \
+              f"--sig-period {args.sig_period} " \
+              f"--sig-k {args.sig_k} " \
+              f"--obfus-targets {args.obfus_targets} " \
+              f"--obfus-auto-reseed {args.obfus_auto_reseed} " \
+              f"--output {output_json}"
+        
+        if args.obfus_max_layers is not None:
+            cmd += f" --obfus-max-layers {args.obfus_max_layers}"
+        
+        if args.obfus_initial_reseed:
+            cmd += " --obfus-initial-reseed"
+        
+        run_command(cmd)
+        
+        # Step 2: Generate visualizations
+        print("\n" + "="*70)
+        print(f"STEP 2: Generating Visualizations for {model_name}")
+        print("="*70 + "\n")
+        
+        cmd = f"python obfus_visualization/visualize_obfus_results.py {output_json}"
+        run_command(cmd)
+        
+    # Done
     
     # Done
     print("\n" + "="*70)

@@ -28,7 +28,12 @@ import cfg
 from support import models
 from support.dataman_extended import get_benign_loader_extended, get_dataset_info
 from support.models.quantized_layers import quan_Conv1d, quan_Linear, CustomBlock
+from support.models.quantized_layers import quan_Conv1d, quan_Linear, CustomBlock
 from support.obfus_sig import ObfusSigRuntime
+try:
+    from utils_excel import append_to_excel
+except ImportError:
+    append_to_excel = None
 
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
@@ -460,7 +465,47 @@ def run_experiments(model_name: str, dataset_name: str, device: str = 'cuda',
             print(f"  F1-Score (macro):  {attack_metrics['f1']:.4f} (Δ: {attack_metrics['f1'] - baseline_obfus_metrics['f1']:.4f})")
             print(f"  F1-Score (weighted): {attack_metrics['f1_weighted']:.4f} (Δ: {attack_metrics['f1_weighted'] - baseline_obfus_metrics['f1_weighted']:.4f})")
             print(f"  MCC:               {attack_metrics['mcc']:.4f} (Δ: {attack_metrics['mcc'] - baseline_obfus_metrics['mcc']:.4f})")
+            print(f"  F1-Score (weighted): {attack_metrics['f1_weighted']:.4f} (Δ: {attack_metrics['f1_weighted'] - baseline_obfus_metrics['f1_weighted']:.4f})")
+            print(f"  MCC:               {attack_metrics['mcc']:.4f} (Δ: {attack_metrics['mcc'] - baseline_obfus_metrics['mcc']:.4f})")
             print(f"  F1 per-class std:  {attack_metrics['f1_per_class_std']:.4f}")
+
+            # Excel Logging for 3-State Comparison
+            if append_to_excel:
+                # We need metrics for: Baseline, Attack (No Def), Attack (With Def)
+                # Note: 'attack_no_defense' might not have the same key if we loop differently, but here we are in the same loop logic?
+                # Actually, the loops are separate (lines 381 vs 406).
+                # We can grab the no-defense result for this mode from the `results` dict which is being populated.
+                
+                no_def_metrics = results['attack_no_defense'].get(attack_mode, {})
+                
+                excel_row = {
+                    'Dataset': dataset_name,
+                    'Model': model_name,
+                    'Attack Mode': attack_mode,
+                    'Iterations': attack_iters,
+                    
+                    # Baseline
+                    'Baseline Acc': baseline_metrics['accuracy'],
+                    'Baseline F1': baseline_metrics['f1'],
+                    'Baseline TPR': baseline_metrics['tpr'],
+                    'Baseline MCC': baseline_metrics['mcc'],
+                    
+                    # Attack (No Defense)
+                    'NoDef Acc': no_def_metrics.get('accuracy', 0),
+                    'NoDef F1': no_def_metrics.get('f1', 0),
+                    'NoDef TPR': no_def_metrics.get('tpr', 0),
+                    'NoDef MCC': no_def_metrics.get('mcc', 0),
+
+                    # Attack (With OBFUS)
+                    'Obfus Acc': attack_metrics['accuracy'],
+                    'Obfus F1': attack_metrics['f1'],
+                    'Obfus TPR': attack_metrics['tpr'],
+                    'Obfus MCC': attack_metrics['mcc'],
+                    
+                    # Deltas (Defense vs No Defense)
+                    'Recovery Acc': attack_metrics['accuracy'] - no_def_metrics.get('accuracy', 0),
+                }
+                append_to_excel('results/obfus_comparison.xlsx', excel_row)
     
     return results
 
