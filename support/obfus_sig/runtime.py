@@ -43,8 +43,7 @@ class ObfusSigRuntime:
         initial_reseed: bool = True,
         proactive_reseed_period: int = 0,
         allow_fallback: bool = True,
-        proactive_reseed_period: int = 0,
-        allow_fallback: bool = True,
+
         excel_file: str = "results/controller_events.xlsx",
         excel_metadata: Optional[Dict[str, str]] = None,
     ) -> None:
