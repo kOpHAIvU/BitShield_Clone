@@ -495,12 +495,8 @@ def run_experiments(model_name: str, dataset_name: str, device: str = 'cuda',
             
             # Fill columns for each attack mode
             for mode in executed_modes:
-                # 1. Original (Before Attack)
-                # Note: Baseline is constant across modes usually, but OBFUS baseline is specific if OBFUS is on
-                if args.with_obfus:
-                     orig_val = results['attack_with_obfus'][mode]['baseline_with_obfus'].get(metric_key, 0)
-                else:
-                     orig_val = results['baseline'].get(metric_key, 0)
+                # 1. Original (Before Attack) - Always use Global Baseline
+                orig_val = results['baseline'].get(metric_key, 0)
 
                 # 2. Attacked (No Defense)
                 atk_val = results['attack_no_defense'].get(mode, {}).get(metric_key, 0)
