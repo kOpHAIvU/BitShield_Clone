@@ -81,7 +81,6 @@ class ObfusSigRuntime:
         # Optional shadow model
         self.shadow_model = copy.deepcopy(self.model).to(self.device) if make_shadow else None
         if self.shadow_model is not None:
-        if self.shadow_model is not None:
             self.ctrl.register_shadow_model(self.shadow_model)
         
         # Configure Excel logging
