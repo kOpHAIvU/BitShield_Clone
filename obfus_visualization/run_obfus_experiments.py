@@ -467,45 +467,53 @@ def run_experiments(model_name: str, dataset_name: str, device: str = 'cuda',
             print(f"  MCC:               {attack_metrics['mcc']:.4f} (Δ: {attack_metrics['mcc'] - baseline_obfus_metrics['mcc']:.4f})")
             print(f"  F1-Score (weighted): {attack_metrics['f1_weighted']:.4f} (Δ: {attack_metrics['f1_weighted'] - baseline_obfus_metrics['f1_weighted']:.4f})")
             print(f"  MCC:               {attack_metrics['mcc']:.4f} (Δ: {attack_metrics['mcc'] - baseline_obfus_metrics['mcc']:.4f})")
+            print(f"  MCC:               {attack_metrics['mcc']:.4f} (Δ: {attack_metrics['mcc'] - baseline_obfus_metrics['mcc']:.4f})")
             print(f"  F1 per-class std:  {attack_metrics['f1_per_class_std']:.4f}")
 
-            # Excel Logging for 3-State Comparison
-            if append_to_excel:
-                # We need metrics for: Baseline, Attack (No Def), Attack (With Def)
-                # Note: 'attack_no_defense' might not have the same key if we loop differently, but here we are in the same loop logic?
-                # Actually, the loops are separate (lines 381 vs 406).
-                # We can grab the no-defense result for this mode from the `results` dict which is being populated.
-                
-                no_def_metrics = results['attack_no_defense'].get(attack_mode, {})
-                
-                excel_row = {
-                    'Dataset': dataset_name,
-                    'Model': model_name,
-                    'Attack Mode': attack_mode,
-                    'Iterations': attack_iters,
-                    
-                    # Baseline
-                    'Baseline Acc': baseline_metrics['accuracy'],
-                    'Baseline F1': baseline_metrics['f1'],
-                    'Baseline TPR': baseline_metrics['tpr'],
-                    'Baseline MCC': baseline_metrics['mcc'],
-                    
-                    # Attack (No Defense)
-                    'NoDef Acc': no_def_metrics.get('accuracy', 0),
-                    'NoDef F1': no_def_metrics.get('f1', 0),
-                    'NoDef TPR': no_def_metrics.get('tpr', 0),
-                    'NoDef MCC': no_def_metrics.get('mcc', 0),
+    # Centralized Excel Logging (Matrix Format)
+    if append_to_excel:
+        print("\nSaving comparison matrix to results/obfus_comparison.xlsx...")
+        
+        # Define metrics to map
+        metrics_map = {
+            'Accuracy': 'accuracy',
+            'F1': 'f1', # Macro or weighted? Using macro based on print above
+            'TPR': 'tpr',
+            'MCC': 'mcc'
+        }
+        
+        # Attack modes executed in this run
+        executed_modes = list(results['attack_with_obfus'].keys()) if args.with_obfus else list(results['attack_no_defense'].keys())
+        
+        # Create a row for each metric
+        for metric_name, metric_key in metrics_map.items():
+            excel_row = {
+                'Dataset': dataset_name,
+                'Model': model_name,
+                'Metric': metric_name
+            }
+            
+            # Fill columns for each attack mode
+            for mode in executed_modes:
+                # 1. Original (Before Attack)
+                # Note: Baseline is constant across modes usually, but OBFUS baseline is specific if OBFUS is on
+                if args.with_obfus:
+                     orig_val = results['attack_with_obfus'][mode]['baseline_with_obfus'].get(metric_key, 0)
+                else:
+                     orig_val = results['baseline'].get(metric_key, 0)
 
-                    # Attack (With OBFUS)
-                    'Obfus Acc': attack_metrics['accuracy'],
-                    'Obfus F1': attack_metrics['f1'],
-                    'Obfus TPR': attack_metrics['tpr'],
-                    'Obfus MCC': attack_metrics['mcc'],
-                    
-                    # Deltas (Defense vs No Defense)
-                    'Recovery Acc': attack_metrics['accuracy'] - no_def_metrics.get('accuracy', 0),
-                }
-                append_to_excel('results/obfus_comparison.xlsx', excel_row)
+                # 2. Attacked (No Defense)
+                atk_val = results['attack_no_defense'].get(mode, {}).get(metric_key, 0)
+                
+                # 3. Protected (With OBFUS) - Only if OBFUS ran
+                def_val = results['attack_with_obfus'].get(mode, {}).get(metric_key, 0) if args.with_obfus else "N/A"
+                
+                # Add to row with formatted keys
+                excel_row[f'{mode} (Original)'] = orig_val
+                excel_row[f'{mode} (Attacked)'] = atk_val
+                excel_row[f'{mode} (Protected)'] = def_val
+                
+            append_to_excel('results/obfus_comparison.xlsx', excel_row)
     
     return results
 
