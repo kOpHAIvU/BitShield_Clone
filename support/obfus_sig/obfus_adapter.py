@@ -107,7 +107,7 @@ class ObfusPair(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self._supports_weight_shuffle:
-            x = _index_select_along_dim(x, self.dim, self._active_inv_buf)
+            x = _index_select_along_dim(x, self.dim, self._active_perm_buf)
             return self.child(x)
         # Fallback: behave like legacy adapter (permute activations pre/post).
         # This path is only used when shuffling weights is not supported.
