@@ -21,6 +21,7 @@ from support import torchdig_tabular
 from support.dataman_extended import get_benign_loader_extended, get_dataset_info
 from support.models.quantized_layers import quan_Conv1d, quan_Linear, CustomBlock
 from support.obfus_sig import ObfusSigRuntime
+from utils_excel import append_to_excel
 
 def ensure_dir_of(filepath):
     dirpath = os.path.dirname(filepath)
@@ -346,7 +347,23 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
                 'accuracy_after': accuracy_after,
                 'accuracy_drop': original_accuracy - accuracy_after,
                 'detection_rate': detection_rate
+                'detection_rate': detection_rate
             })
+            
+            # Excel Logging
+            excel_data = {
+                'Dataset': dataset_name,
+                'Model': model_name,
+                'Defense Type': 'DIG',
+                'Attack Mode': 'noise',
+                'Attack Strength': strength,
+                'Original Accuracy': original_accuracy,
+                'Accuracy After Attack': accuracy_after,
+                'Accuracy Drop': original_accuracy - accuracy_after,
+                'Detection Rate': detection_rate
+            }
+            append_to_excel('results/combined_metrics.xlsx', excel_data)
+            
             print(f"  Accuracy after attack: {accuracy_after:.2f}%")
             print(f"  DIG detection rate: {detection_rate:.2f}%")
     else:
@@ -463,6 +480,22 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
             'samples_detected': detected_attacks,
             'samples_processed': total
         })
+        })
+        
+        # Excel Logging (Iterative)
+        excel_data = {
+            'Dataset': dataset_name,
+            'Model': model_name,
+            'Defense Type': 'DIG',
+            'Attack Mode': attack_mode,
+            'Iterations': int(attack_iters),
+            'Original Accuracy': original_accuracy,
+            'Accuracy After Attack': accuracy_after,
+            'Accuracy Drop': original_accuracy - accuracy_after,
+            'Detection Rate': detection_rate
+        }
+        append_to_excel('results/combined_metrics.xlsx', excel_data)
+        
         print(f"  Accuracy after attack: {accuracy_after:.2f}%")
         print(f"  DIG detection rate: {detection_rate:.2f}%")
 
@@ -572,6 +605,20 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu', attack_mo
             })
             print(f"  Accuracy after attack: {accuracy_after:.2f}%")
             print(f"  CIG detection rate: {cig_detection_rate:.2f}%")
+            
+            # Excel Logging
+            excel_data = {
+                'Dataset': dataset_name,
+                'Model': model_name,
+                'Defense Type': 'CIG',
+                'Attack Mode': 'noise',
+                'Attack Strength': strength,
+                'Original Accuracy': original_accuracy,
+                'Accuracy After Attack': accuracy_after,
+                'Accuracy Drop': original_accuracy - accuracy_after,
+                'Detection Rate': cig_detection_rate
+            }
+            append_to_excel('results/combined_metrics.xlsx', excel_data)
     else:
         # Bit-flip iterative attacks with per-iteration logging
         calib_batch = next(iter(train_loader))
@@ -682,6 +729,20 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu', attack_mo
         print(f"  Accuracy after attack: {accuracy_after:.2f}%")
         print(f"  CIG detection rate: {cig_detection_rate:.2f}%")
 
+        # Excel Logging (Iterative)
+        excel_data = {
+            'Dataset': dataset_name,
+            'Model': model_name,
+            'Defense Type': 'CIG',
+            'Attack Mode': attack_mode,
+            'Iterations': int(attack_iters),
+            'Original Accuracy': original_accuracy,
+            'Accuracy After Attack': accuracy_after,
+            'Accuracy Drop': original_accuracy - accuracy_after,
+            'Detection Rate': cig_detection_rate
+        }
+        append_to_excel('results/combined_metrics.xlsx', excel_data)
+
     # Save results
     output_dir = 'results/defense_results'
     ensure_dir_of(output_dir)
@@ -737,6 +798,20 @@ def attack_with_combined_protection(model_name, dataset_name, device='cpu'):
             'combined_detection': combined_detection,
             'improvement': combined_detection - max(dig_detection, cig_detection)
         })
+        
+        # Excel Logging
+        excel_data = {
+            'Dataset': dataset_name,
+            'Model': model_name,
+            'Defense Type': 'Combined (DIG+CIG)',
+            'Attack Mode': 'noise',
+            'Attack Strength': strength,
+            'Original Accuracy': dig_results['original_accuracy'],
+            'Accuracy After Attack': dig_res.get('accuracy_after', 0),
+            'Accuracy Drop': dig_res.get('accuracy_drop', 0), 
+            'Detection Rate': combined_detection
+        }
+        append_to_excel('results/combined_metrics.xlsx', excel_data)
 
     # Save combined results
     output_dir = 'results/defense_results'
@@ -751,6 +826,7 @@ def attack_with_combined_protection(model_name, dataset_name, device='cpu'):
     # Print combined summary
     print("\n" + "="*80)
     print("COMBINED DEFENSE SUMMARY")
+    print("="*80)
     print("="*80)
     for result in combined_results['combined_analysis']:
         print(f"Strength {result['strength']}: "
@@ -804,7 +880,14 @@ if __name__ == '__main__':
             "obfus_targets": targets,
             "max_obfus_layers": max_layers,
             "proactive_period": max(0, args.obfus_auto_reseed),
+            "proactive_period": max(0, args.obfus_auto_reseed),
             "allow_fallback": not bool(args.obfus_strict),
+            "excel_file": "results/controller_events.xlsx",
+            "excel_metadata": {
+                "Dataset": args.dataset,
+                "Model": args.model,
+                "Attack Mode": args.attack_mode,
+            }
         }
         if args.obfus_initial_reseed:
             obfus_cfg["initial_reseed"] = True

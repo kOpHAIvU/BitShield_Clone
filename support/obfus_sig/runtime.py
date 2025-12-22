@@ -43,6 +43,10 @@ class ObfusSigRuntime:
         initial_reseed: bool = True,
         proactive_reseed_period: int = 0,
         allow_fallback: bool = True,
+        proactive_reseed_period: int = 0,
+        allow_fallback: bool = True,
+        excel_file: str = "results/controller_events.xlsx",
+        excel_metadata: Optional[Dict[str, str]] = None,
     ) -> None:
         self.device = device or next(model.parameters()).device
         self.model, adapters = wrap_model_with_obfus(
@@ -77,7 +81,12 @@ class ObfusSigRuntime:
         # Optional shadow model
         self.shadow_model = copy.deepcopy(self.model).to(self.device) if make_shadow else None
         if self.shadow_model is not None:
+        if self.shadow_model is not None:
             self.ctrl.register_shadow_model(self.shadow_model)
+        
+        # Configure Excel logging
+        if excel_metadata:
+            self.ctrl.set_excel_logging(excel_file, excel_metadata)
 
     def calibrate(self, sig_steps: int = 50) -> Dict[str, float]:
         fp_stats = self.fp.build_baseline()
