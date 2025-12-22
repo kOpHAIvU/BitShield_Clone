@@ -32,8 +32,8 @@ class SimpleCNNIoT(nn.Module):
         # Stage 1
         self.conv1 = nn.Conv1d(input_size, hidden_sizes[0], kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm1d(hidden_sizes[0])
-        # Use simple MaxPool with stride 2 to reduce dim gradually, not destroy it
-        self.pool = nn.MaxPool1d(kernel_size=2, stride=2) 
+        # Note: Removed MaxPool because input is treated as [B, C, 1] (Length=1), 
+        # so spatial pooling is impossible/redundant.
         self.activation = nn.ReLU()
         self.dropout = nn.Dropout(0.1)
         
@@ -49,13 +49,11 @@ class SimpleCNNIoT(nn.Module):
         self.stage_3 = nn.Conv1d(hidden_sizes[2], hidden_sizes[3], kernel_size=3, padding=1)
         self.bn4 = nn.BatchNorm1d(hidden_sizes[3])
 
-        # Global Pooling
+        # Global Pooling (Identity if length is 1)
         self.global_pool = nn.AdaptiveAvgPool1d(1)
 
         # Classifier
         self.classifier = CustomBlock(hidden_sizes[-1], output_size, apply_softmax=True)
-        # Note: Dropout is handled in forward or inside CustomBlock if needed, 
-        # but here we used to have a detached Dropout line. We'll add it in forward.
         
     def forward(self, x):
         """Forward pass through the network"""
@@ -68,25 +66,21 @@ class SimpleCNNIoT(nn.Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.activation(x)
-        # x = self.pool(x) # Optional: Skip pooling in first layer if input dim is small (69)
         
         # Block 2
         x = self.stage_1(x)
         x = self.bn2(x)
         x = self.activation(x)
-        x = self.pool(x) # Reduce dim / 2
 
         # Block 3
         x = self.stage_2(x)
         x = self.bn3(x)
         x = self.activation(x)
-        x = self.pool(x) # Reduce dim / 4
 
         # Block 4
         x = self.stage_3(x)
         x = self.bn4(x)
         x = self.activation(x)
-        # x = self.pool(x) # Reduce dim / 8
 
         # Global Pooling
         x = self.global_pool(x)
