@@ -22,7 +22,7 @@ def append_to_excel(file_path, data_dict):
             with pd.ExcelWriter(file_path, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
                 # Try to load existing sheet to find the last row
                 try:
-                    writer.book = load_workbook(file_path)
+                    # writer.book = load_workbook(file_path) # Not needed in newer pandas with mode='a'
                     # Assuming data is in the first sheet or default sheet 'Sheet1'
                     if 'Sheet1' in writer.book.sheetnames:
                         start_row = writer.book['Sheet1'].max_row
