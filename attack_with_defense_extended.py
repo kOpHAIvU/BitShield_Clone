@@ -33,7 +33,7 @@ def load_model(model_name, dataset_name, device='cpu'):
     if not os.path.exists(model_file):
         print(f"Model file not found: {model_file}")
         return None
-    
+
     if dataset_name in {'ImageNet'}:
         model_class = getattr(torchvision.models, model_name)
         torch_model = model_class(pretrained=False)
@@ -46,7 +46,7 @@ def load_model(model_name, dataset_name, device='cpu'):
         except Exception as e:
             print(f"Error getting dataset info: {e}")
             return None
-    
+
     torch_model.load_state_dict(torch.load(model_file, map_location='cpu'))
     torch_model.to(device)
     torch_model.eval()
@@ -56,9 +56,35 @@ def _is_quant_module(module):
     return isinstance(module, (quan_Conv1d, quan_Linear, CustomBlock))
 
 
+def int2bin(input_val, num_bits):
+    """Convert signed integer → unsigned integer (2's complement)"""
+    output = input_val if isinstance(input_val, torch.Tensor) else torch.tensor([input_val])
+    output = output.clone()
+    
+    if num_bits == 1:
+        output = output / 2 + 0.5
+    elif num_bits > 1:
+        # Convert negative values to 2's complement
+        mask = output.lt(0)
+        output[mask] = 2**num_bits + output[mask]
+    return output
+
+
+def bin2int(input_val, num_bits):
+    """Convert unsigned integer (2's complement) → signed integer"""
+    input_tensor = input_val if isinstance(input_val, torch.Tensor) else torch.tensor([input_val])
+    
+    if num_bits == 1:
+        output = input_tensor * 2 - 1
+    elif num_bits > 1:
+        mask = 2**(num_bits - 1) - 1
+        output = -(input_tensor & ~mask) + (input_tensor & mask)
+    return output
+
+
 def _flip_one_bit_in_module_weight(module, element_index=None, bit_index=None):
-    """Flip exactly one bit in the module's weight tensor.
-    Flips bit directly in float32 representation (realistic bit-flip attack).
+    """Flip exactly one bit in the module's weight tensor using quantized representation.
+    Uses quantized bit-flip approach (like notebook) instead of float32 IEEE754.
     Returns (old_val, new_val, element_index, bit_index).
     """
     if not hasattr(module, 'weight'):
@@ -69,18 +95,28 @@ def _flip_one_bit_in_module_weight(module, element_index=None, bit_index=None):
     numel = flat.numel()
     if numel == 0:
         return None
+
+    # Get quantization bitwidth
+    N_bits = getattr(module, 'N_bits', 8)  # Default to 8 if not specified
     
     if element_index is None:
         element_index = int(torch.randint(low=0, high=numel, size=(1,)).item())
     if bit_index is None:
-        bit_index = int(torch.randint(low=0, high=32, size=(1,)).item())  # 32 bits for float32
+        bit_index = int(torch.randint(low=0, high=N_bits, size=(1,)).item())  # ✅ Use N_bits
 
-    # Flip bit in float32 representation
+    # Flip bit in quantized representation (like notebook)
     old_val = flat[element_index].item()
-    int_bits = torch.tensor([old_val]).view(torch.int32).item()
-    int_bits ^= (1 << bit_index)
-    new_val = torch.tensor([int_bits], dtype=torch.int32).view(torch.float32).item()
     
+    # Convert to quantized binary representation (2's complement)
+    bin_w = int2bin(torch.tensor([old_val]), N_bits).short().item()
+    
+    # Create mask and flip the bit
+    mask = 2 ** bit_index
+    bin_w_flipped = bin_w ^ mask
+    
+    # Convert back to float
+    new_val = bin2int(torch.tensor([bin_w_flipped]), N_bits).float().item()
+
     flat[element_index] = new_val
     return (old_val, new_val, element_index, bit_index)
 
@@ -128,7 +164,11 @@ def _progressive_bit_search(model, criterion, calib_x, calib_y, max_trials=16):
         if weight.numel() == 0:
             continue
         elem_idx = int(torch.randint(low=0, high=weight.numel(), size=(1,)).item())
-        bit_idx = int(torch.randint(low=0, high=32, size=(1,)).item())  # 32 bits for float32
+        
+        # ✅ Use N_bits instead of 32 (quantized representation)
+        N_bits = getattr(module, 'N_bits', 8)
+        bit_idx = int(torch.randint(low=0, high=N_bits, size=(1,)).item())
+        
         # Save original
         old_val = weight.view(-1)[elem_idx].item()
         flip_info = _flip_one_bit_in_module_weight(module, elem_idx, bit_idx)
@@ -185,12 +225,12 @@ def _evaluate_with_dig(protected_model, test_loader, sus_score_range, device):
 def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mode='noise', attack_iters=25):
     """Attack simulation with DIG protection (uses Tabular DIG for tabular datasets)"""
     print(f"Running attack simulation with DIG protection for {model_name} on {dataset_name}...")
-    
+
     # Load model
     model = load_model(model_name, dataset_name, device)
     if model is None:
         return
-    
+
     # Load test data
     test_loader = get_benign_loader_extended(dataset_name, 32, 'test', batch_size=100)
     train_loader = get_benign_loader_extended(dataset_name, 32, 'train', batch_size=100)
@@ -220,7 +260,7 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
         )
         cal_stats = obfus_runtime.calibrate(sig_steps=50)
         print("[OBFUS-SIG] Calibrated:", cal_stats)
-    
+
     # Use Tabular DIG for tabular datasets
     if dataset_name in ['IoTID20', 'WUSTL', 'CICIoT2023']:
         print(f"Using Tabular DIG for {dataset_name} dataset...")
@@ -229,18 +269,18 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
         protected_model = torchdig_tabular.wrap_with_tabular_dig(model_for_dig)
         protected_model.to(device)
         protected_model.eval()
-        
+
         # Calculate suspicious score range for Tabular DIG
         from support.torchdig_tabular import calc_tabular_dig_range
         sus_score_range = calc_tabular_dig_range(protected_model, train_loader, device, n_batches=50)
     else:
         print(f"Dataset {dataset_name} not supported in this version")
         return
-    
+
     # Get original accuracy
     correct = 0
     total = 0
-    
+
     with torch.no_grad():
         for x, y in tqdm(test_loader, desc="Testing original model"):
             x, y = x.to(device), y.to(device)
@@ -251,13 +291,13 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
             _, predicted = torch.max(y_pred.data, 1)
             total += y.size(0)
             correct += (predicted == y).sum().item()
-    
+
     original_accuracy = 100 * correct / total
     print(f'Original accuracy: {original_accuracy:.2f}%')
-    
+
     # Simulate attacks with DIG detection
     print("Simulating attacks with DIG protection...")
-    
+
     attack_results = {
         'model': model_name,
         'dataset': dataset_name,
@@ -265,7 +305,7 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
         'sus_score_range': sus_score_range,
         'attack_results': []
     }
-    
+
     if attack_mode == 'noise':
         # Different attack strengths (legacy noise attack)
         attack_strengths = [0.1, 0.2, 0.5, 1.0]
@@ -387,11 +427,11 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
             writer.writerows(iter_logs)
         print(f"Per-iteration log saved to: {csv_path}")
         # Evaluate once after iterative attack
-        
+
         correct = 0
         total = 0
         detected_attacks = 0
-        
+
         for x, y in test_loader:
             x, y = x.to(device), y.to(device)
             batch_size = x.size(0)
@@ -407,7 +447,7 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
                 # If gradient calculation fails, assume not detected
                 pass
             x.requires_grad_(False)
-            
+
             y_pred = protected_model(x)
             _, predicted = torch.max(y_pred.data, 1)
             total += y.size(0)
@@ -425,17 +465,17 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
         })
         print(f"  Accuracy after attack: {accuracy_after:.2f}%")
         print(f"  DIG detection rate: {detection_rate:.2f}%")
-    
+
     # Save results
     output_dir = 'results/defense_results'
     ensure_dir_of(output_dir)
     output_file = os.path.join(output_dir, f'{dataset_name}_{model_name}_dig_attack.json')
-    
+
     with open(output_file, 'w') as f:
         json.dump(attack_results, f, indent=2)
-    
+
     print(f"Results saved to: {output_file}")
-    
+
     # Print summary
     print("\n=== DIG Protection Summary ===")
     for result in attack_results['attack_results']:
@@ -444,26 +484,26 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
         else:
             header = f"Mode {result.get('mode', 'unknown')} (iters {result.get('iterations', '?')})"
         print(f"{header}: Accuracy drop {result['accuracy_drop']:.2f}%, DIG detection {result['detection_rate']:.2f}%")
-    
+
     return attack_results
 
 def attack_with_cig_simulation(model_name, dataset_name, device='cpu', attack_mode='noise', attack_iters=25):
     """Simulate CIG protection (code integrity guard)"""
     print(f"Running attack simulation with CIG protection for {model_name} on {dataset_name}...")
-    
+
     # Load model
     model = load_model(model_name, dataset_name, device)
     if model is None:
         return
-    
+
     # Load data
     test_loader = get_benign_loader_extended(dataset_name, 32, 'test', batch_size=100)
     train_loader = get_benign_loader_extended(dataset_name, 32, 'train', batch_size=100)
-    
+
     # Get original accuracy
     correct = 0
     total = 0
-    
+
     with torch.no_grad():
         for x, y in tqdm(test_loader, desc="Testing original model"):
             x, y = x.to(device), y.to(device)
@@ -471,25 +511,25 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu', attack_mo
             _, predicted = torch.max(y_pred.data, 1)
             total += y.size(0)
             correct += (predicted == y).sum().item()
-    
+
     original_accuracy = 100 * correct / total
     print(f'Original accuracy: {original_accuracy:.2f}%')
-    
+
     # Simulate CIG protection by checking parameter integrity
     print("Simulating CIG protection...")
-    
+
     # Store original parameters for integrity check
     original_params = {}
     for name, param in model.named_parameters():
         original_params[name] = param.data.clone()
-    
+
     attack_results = {
         'model': model_name,
         'dataset': dataset_name,
         'original_accuracy': original_accuracy,
         'attack_results': []
     }
-    
+
     if attack_mode == 'noise':
         # Different attack strengths
         attack_strengths = [0.1, 0.2, 0.5, 1.0]
@@ -641,17 +681,17 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu', attack_mo
         })
         print(f"  Accuracy after attack: {accuracy_after:.2f}%")
         print(f"  CIG detection rate: {cig_detection_rate:.2f}%")
-    
+
     # Save results
     output_dir = 'results/defense_results'
     ensure_dir_of(output_dir)
     output_file = os.path.join(output_dir, f'{dataset_name}_{model_name}_cig_attack.json')
-    
+
     with open(output_file, 'w') as f:
         json.dump(attack_results, f, indent=2)
-    
+
     print(f"Results saved to: {output_file}")
-    
+
     # Print summary
     print("\n=== CIG Protection Summary ===")
     for result in attack_results['attack_results']:
@@ -660,17 +700,17 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu', attack_mo
         else:
             header = f"Mode {result.get('mode', 'unknown')} (iters {result.get('iterations', '?')})"
         print(f"{header}: Accuracy drop {result['accuracy_drop']:.2f}%, CIG detection {result['cig_detection_rate']:.2f}%")
-    
+
     return attack_results
 
 def attack_with_combined_protection(model_name, dataset_name, device='cpu'):
     """Attack simulation with combined DIG + CIG protection"""
     print(f"Running attack simulation with combined DIG + CIG protection for {model_name} on {dataset_name}...")
-    
+
     # Run both DIG and CIG separately
     dig_results = attack_with_dig_protection(model_name, dataset_name, device)
     cig_results = attack_with_cig_simulation(model_name, dataset_name, device)
-    
+
     # Combine results
     combined_results = {
         'model': model_name,
@@ -680,16 +720,16 @@ def attack_with_combined_protection(model_name, dataset_name, device='cpu'):
         'cig_results': cig_results,
         'combined_analysis': []
     }
-    
+
     # Analyze combined effectiveness
     for i, (dig_res, cig_res) in enumerate(zip(dig_results['attack_results'], cig_results['attack_results'])):
         strength = dig_res['strength']
         dig_detection = dig_res['detection_rate']
         cig_detection = cig_res['cig_detection_rate']
-        
+
         # Combined detection rate (either DIG or CIG detects)
         combined_detection = max(dig_detection, cig_detection)
-        
+
         combined_results['combined_analysis'].append({
             'strength': strength,
             'dig_detection': dig_detection,
@@ -697,17 +737,17 @@ def attack_with_combined_protection(model_name, dataset_name, device='cpu'):
             'combined_detection': combined_detection,
             'improvement': combined_detection - max(dig_detection, cig_detection)
         })
-    
+
     # Save combined results
     output_dir = 'results/defense_results'
     ensure_dir_of(output_dir)
     output_file = os.path.join(output_dir, f'{dataset_name}_{model_name}_combined_attack.json')
-    
+
     with open(output_file, 'w') as f:
         json.dump(combined_results, f, indent=2)
-    
+
     print(f"Combined results saved to: {output_file}")
-    
+
     # Print combined summary
     print("\n" + "="*80)
     print("COMBINED DEFENSE SUMMARY")
@@ -718,7 +758,7 @@ def attack_with_combined_protection(model_name, dataset_name, device='cpu'):
               f"CIG {result['cig_detection']:.1f}% | "
               f"Combined {result['combined_detection']:.1f}%")
     print("="*80)
-    
+
     return combined_results
 
 if __name__ == '__main__':
@@ -745,7 +785,7 @@ if __name__ == '__main__':
     parser.add_argument('--obfus-auto-reseed', type=int, default=0, help='Force reseed every N checks even without alerts (0 disables)')
     parser.add_argument('--obfus-strict', action='store_true', help='Fail instead of falling back to activation permutation when weight shuffle unsupported')
     args = parser.parse_args()
-    
+
     # Inject OBFUS-SIG config if requested
     if args.obfus_sig:
         targets = [t.strip().lower() for t in args.obfus_targets.split(',') if t.strip()]
@@ -771,7 +811,7 @@ if __name__ == '__main__':
         attack_with_dig_protection._obfus_sig_cfg = obfus_cfg
     else:
         attack_with_dig_protection._obfus_sig_cfg = None
-    
+
     if args.defense_type == 'dig':
         attack_with_dig_protection(args.model, args.dataset, args.device, attack_mode=args.attack_mode, attack_iters=args.attack_iters)
     elif args.defense_type == 'cig':
