@@ -258,7 +258,7 @@ def get_benign_loader_extended(dataset_name, image_size, split, batch_size=100, 
         min_count = counts.min() if counts.min() > 0 else 1
         imbalance_ratio = max_count / min_count
 
-        if imbalance_ratio >= 50:  # enable when extremely imbalanced
+        if imbalance_ratio >= 10:  # enable when imbalanced (lowered threshold from 50)
             class_count = {cls: cnt for cls, cnt in zip(unique, counts)}
             class_weights = {cls: max_count / cnt for cls, cnt in class_count.items()}
             sample_weights = np.array([class_weights[int(label)] for label in y], dtype=np.float64)
