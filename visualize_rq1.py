@@ -8,44 +8,52 @@ import os
 # Tạo thư mục results nếu chưa có
 os.makedirs('results', exist_ok=True)
 
-# Dữ liệu từ hình ảnh bạn cung cấp
-# Kịch bản 1, 2, 3, 4
-data = {
-    'Scenario': ['KB 1', 'KB 2', 'KB 3', 'KB 4'] * 2,
-    'Model': ['ResNetSEBlockIoT'] * 4 + ['SimpleCNNIoT'] * 4,
-    # Lấy giá trị "Sau" (After) để so sánh
-    'MCC_After': [-10, 75, 0, 1, 66, 0, -2, -3], 
-    'TPR_After': [4, 71, 4, 4, 48, 4, 4, 0],
-    'F1_After': [0, 70, 0, 1, 44, 0, 0, 0]
-}
+# Dữ liệu gốc (Baseline)
+# ResNet: MCC=75, TPR=71, F1=70
+# Simple: MCC=71, TPR=58, F1=52
 
-df = pd.DataFrame(data)
+scenarios = ['Original'] + ['KB 1', 'KB 2', 'KB 3', 'KB 4']
+models = ['ResNetSEBlockIoT', 'SimpleCNNIoT']
 
-# Chuyển đổi dữ liệu sang dạng 'long' để dễ vẽ với Seaborn
+# Xây dựng dữ liệu thủ công để đảm bảo khớp
+records = []
+
+# 1. Original (Baseline)
+records.append({'Scenario': 'Original', 'Model': 'ResNetSEBlockIoT', 'MCC': 75, 'TPR': 71, 'F1': 70})
+records.append({'Scenario': 'Original', 'Model': 'SimpleCNNIoT', 'MCC': 71, 'TPR': 58, 'F1': 52})
+
+# 2. Attack Scenarios (Data from table)
+# KB1
+records.append({'Scenario': 'KB 1', 'Model': 'ResNetSEBlockIoT', 'MCC': -10, 'TPR': 4, 'F1': 0})
+records.append({'Scenario': 'KB 1', 'Model': 'SimpleCNNIoT', 'MCC': 66, 'TPR': 48, 'F1': 44})
+# KB2
+records.append({'Scenario': 'KB 2', 'Model': 'ResNetSEBlockIoT', 'MCC': 75, 'TPR': 71, 'F1': 70})
+records.append({'Scenario': 'KB 2', 'Model': 'SimpleCNNIoT', 'MCC': 0, 'TPR': 4, 'F1': 0})
+# KB3
+records.append({'Scenario': 'KB 3', 'Model': 'ResNetSEBlockIoT', 'MCC': 0, 'TPR': 4, 'F1': 0})
+records.append({'Scenario': 'KB 3', 'Model': 'SimpleCNNIoT', 'MCC': -2, 'TPR': 4, 'F1': 0})
+# KB4
+records.append({'Scenario': 'KB 4', 'Model': 'ResNetSEBlockIoT', 'MCC': 1, 'TPR': 4, 'F1': 1})
+records.append({'Scenario': 'KB 4', 'Model': 'SimpleCNNIoT', 'MCC': -3, 'TPR': 0, 'F1': 0})
+
+df = pd.DataFrame(records)
+
+# Chuyển đổi dữ liệu sang dạng 'long'
 df_melted = df.melt(id_vars=['Scenario', 'Model'], 
-                    value_vars=['MCC_After', 'TPR_After', 'F1_After'],
+                    value_vars=['MCC', 'TPR', 'F1'],
                     var_name='Metric', value_name='Score')
 
-# Ánh xạ tên Metric cho đẹp
-df_melted['Metric'] = df_melted['Metric'].map({
-    'MCC_After': 'MCC',
-    'TPR_After': 'TPR', 
-    'F1_After': 'F1-Score'
-})
+# Chuyển đổi từ % sang scale -1 đến 1 (chia 100)
+df_melted['Score'] = df_melted['Score'] / 100.0
+
+# Metric names are already correct (MCC, TPR, F1) so no map needed, but rename F1 to F1-Score for display
+df_melted['Metric'] = df_melted['Metric'].replace({'F1': 'F1-Score'})
 
 # Thiết lập style
 sns.set_theme(style="whitegrid", context="talk")
 
-# Vẽ biểu đồ gộp (3 metrics x 4 kịch bản x 2 models) -> Có thể quá rối
-# Thay vào đó vẽ 1 hình duy nhất cho MCC (chỉ số quan trọng nhất) hoặc vẽ 3 subplot
-
 def plot_combined_rq1():
     plt.figure(figsize=(14, 8))
-    
-    # Vẽ biểu đồ cột
-    # X trục: Kịch bản
-    # Hue: Model
-    # Row/Col: Metric
     
     g = sns.catplot(
         data=df_melted, 
@@ -57,20 +65,23 @@ def plot_combined_rq1():
         palette="ch:s=.25,rot=-.25",
         height=5, 
         aspect=0.8,
-        edgecolor='black'
+        edgecolor='black',
+        order=['Original', 'KB 1', 'KB 2', 'KB 3', 'KB 4'] # Quy định thứ tự
     )
     
     g.fig.subplots_adjust(top=0.85)
     g.fig.suptitle('Tác động của BFA lên các mô hình (RQ1)', fontsize=20, weight='bold')
     
-    # Thêm baseline lines (vẽ thủ công hơi khó trên FacetGrid)
-    # Thay vào đó chỉ hiển thị giá trị
-    
+    # Định dạng nhãn trục Y và label trên cột
     for ax in g.axes.flat:
+        ax.set_ylim(-0.2, 1.05) # MCC có thể âm
+        ax.axhline(0, color='black', linewidth=1) # Đường 0 cho rõ
+        
         for container in ax.containers:
-            ax.bar_label(container, fmt='%.0f', padding=3, fontsize=10)
+            # Format 2 số thập phân (ví dụ 0.75)
+            ax.bar_label(container, fmt='%.2f', padding=3, fontsize=10)
     
-    g.set_axis_labels("Kịch bản tấn công", "Giá trị sau tấn công (%)")
+    g.set_axis_labels("Kịch bản tấn công", "Giá trị (Index)")
     
     output_file = 'results/rq1_impact_combined.png'
     g.savefig(output_file, dpi=300)
