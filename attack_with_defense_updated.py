@@ -35,12 +35,14 @@ def load_model(model_name, dataset_name, device='cpu'):
         torch_model = model_class(pretrained=False)
     else:
         model_class = getattr(models, model_name)
-        if dataset_name == 'IoTID20':
-            from support.dataman_iotid20 import preprocess_iotid20_data
-            _, _, input_size, num_classes = preprocess_iotid20_data('support/dataset/IoTID20')
+        # Get dataset info for model initialization
+        try:
+            from support.dataman_extended import get_dataset_info
+            input_size, num_classes = get_dataset_info(dataset_name)
             torch_model = model_class(input_size=input_size, output_size=num_classes)
-        else:
-            torch_model = model_class(pretrained=False)
+        except Exception as e:
+            print(f"Error getting dataset info: {e}")
+            return None
     
     torch_model.load_state_dict(torch.load(model_file, map_location='cpu'))
     torch_model.to(device)
