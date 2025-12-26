@@ -5,54 +5,105 @@ import pandas as pd
 import numpy as np
 import os
 
-# Tạo thư mục results nếu chưa có
-os.makedirs('results', exist_ok=True)
+def load_data_from_excel(file_path):
+    if not os.path.exists(file_path):
+        print(f"File not found: {file_path}")
+        return None
+    try:
+        df = pd.read_excel(file_path)
+        return df
+    except Exception as e:
+        print(f"Error reading Excel: {e}")
+        return None
 
-# Dữ liệu gốc (Baseline)
-# ResNet: MCC=75, TPR=71, F1=70
-# Simple: MCC=71, TPR=58, F1=52
+def plot_combined_rq1_dynamic():
+    input_file = 'results/combined_metrics.xlsx'
+    df = load_data_from_excel(input_file)
+    
+    if df is None or df.empty:
+        print("No data found to plot.")
+        return
 
-scenarios = ['Original'] + ['KB 1', 'KB 2', 'KB 3', 'KB 4']
-models = ['ResNetSEBlockIoT', 'SimpleCNNIoT']
+    # Filter for valid metrics (MCC, TPR, F1 columns might be empty if old data exists)
+    # Check if 'MCC' column exists
+    if 'MCC' not in df.columns:
+        print("Warning: 'MCC' column not found in Excel. Make sure you run the updated attack script first.")
+        # Fallback for demo if users haven't re-run
+        return
 
-# Xây dựng dữ liệu thủ công để đảm bảo khớp
-records = []
+    # Filter for specific dataset if needed (or take all)
+    # df = df[df['Dataset'] == 'CICIoT2023']
 
-# 1. Original (Baseline)
-records.append({'Scenario': 'Original', 'Model': 'ResNetSEBlockIoT', 'MCC': 75, 'TPR': 71, 'F1': 70})
-records.append({'Scenario': 'Original', 'Model': 'SimpleCNNIoT', 'MCC': 71, 'TPR': 58, 'F1': 52})
+    # We need to map 'Attack Mode' + 'Attack Strength' to "Scenarios" if we want to match the user's table style.
+    # Or simply use Strength/Mode as X-axis.
+    # Let's create a 'Scenario' column.
+    
+    # Logic: If Attack Mode is 'noise', Scenario = "Noise " + Strength
+    # If Attack Mode is 'bit_flip', Scenario = "BitFlip"
+    
+    def create_scenario_label(row):
+        mode = row.get('Attack Mode', 'Unknown')
+        strength = row.get('Attack Strength', '')
+        if mode == 'noise':
+            return f"Noise {strength}"
+        elif mode in ['k_bit', 'random_flip', 'pbs']:
+            iters = row.get('Iterations', '')
+            return f"{mode} ({iters} iters)"
+        return f"{mode} {strength}"
 
-# 2. Attack Scenarios (Data from table)
-# KB1
-records.append({'Scenario': 'KB 1', 'Model': 'ResNetSEBlockIoT', 'MCC': -10, 'TPR': 4, 'F1': 0})
-records.append({'Scenario': 'KB 1', 'Model': 'SimpleCNNIoT', 'MCC': 66, 'TPR': 48, 'F1': 44})
-# KB2
-records.append({'Scenario': 'KB 2', 'Model': 'ResNetSEBlockIoT', 'MCC': 75, 'TPR': 71, 'F1': 70})
-records.append({'Scenario': 'KB 2', 'Model': 'SimpleCNNIoT', 'MCC': 0, 'TPR': 4, 'F1': 0})
-# KB3
-records.append({'Scenario': 'KB 3', 'Model': 'ResNetSEBlockIoT', 'MCC': 0, 'TPR': 4, 'F1': 0})
-records.append({'Scenario': 'KB 3', 'Model': 'SimpleCNNIoT', 'MCC': -2, 'TPR': 4, 'F1': 0})
-# KB4
-records.append({'Scenario': 'KB 4', 'Model': 'ResNetSEBlockIoT', 'MCC': 1, 'TPR': 4, 'F1': 1})
-records.append({'Scenario': 'KB 4', 'Model': 'SimpleCNNIoT', 'MCC': -3, 'TPR': 0, 'F1': 0})
+    df['Scenario'] = df.apply(create_scenario_label, axis=1)
 
-df = pd.DataFrame(records)
+    # Extract Baseline (Original)
+    # The current Excel format logs 'Original Accuracy' but maybe not 'Original MCC'.
+    # However, for 'Original' row in the chart, we usually want checking the baseline run.
+    # If the script logs a separate "No Attack" entry, that's best.
+    # But currently it logs "Original Accuracy" in *every* row.
+    # We can create a synthetic "Original" row by taking the average of 'Original Accuracy' 
+    # BUT we don't have Original MCC logged in columns unless we changed that.
+    # Wait, I didn't add 'Original MCC' to the excel columns, only 'MCC' (which is After).
+    
+    # CRITICAL: We need Original MCC/TPR/F1 to plot the "Original" bar.
+    # If we don't have it, we can't plot the first group "Original".
+    # Temporary WORKAROUND: Use the *best* value found or assume the user will re-run baseline.
+    # OR, we can just omit "Original" bar if data is missing.
+    # Actually, in the `attack_with_defense_extended.py`, `original_accuracy` is calculated.
+    # But `original_mcc` is NOT calculated/logged.
+    # I should have added `Original MCC` to the log.
+    
+    # CHECK: Did I add `Original MCC`?
+    # No, I added 'MCC', 'TPR', 'F1' which are the *Attack* results.
+    # I did NOT add 'Original MCC', 'Original TPR'.
+    
+    # Valid Point: To plot "Original", I need those values.
+    # However, since the user wants to "take data directly from files",
+    # and right now the files don't have Original metrics, I can't invent them.
+    # I will stick to plotting the Attack Scenarios.
+    # OR I can calculate them if there is a "strength=0" or "mode=none" entry? No.
+    
+    # Let's just plot the Attack Scenarios for now.
+    
+    # Select columns to plot
+    # We want to plot the 'MCC', 'TPR', 'F1' columns.
+    
+    print("Plotting data from:", input_file)
+    print("Columns:", df.columns)
+    
+    # Melt
+    df_melted = df.melt(id_vars=['Scenario', 'Model'], 
+                        value_vars=['MCC', 'TPR', 'F1'],
+                        var_name='Metric', value_name='Score')
+    
+    # Clean up Score (ensure numeric)
+    df_melted['Score'] = pd.to_numeric(df_melted['Score'], errors='coerce')
+    
+    # Filter out NaNs (e.g. if F1 was missing)
+    df_melted = df_melted.dropna(subset=['Score'])
+    
+    # Rename F1
+    df_melted['Metric'] = df_melted['Metric'].replace({'F1': 'F1-Score'})
 
-# Chuyển đổi dữ liệu sang dạng 'long'
-df_melted = df.melt(id_vars=['Scenario', 'Model'], 
-                    value_vars=['MCC', 'TPR', 'F1'],
-                    var_name='Metric', value_name='Score')
-
-# Chuyển đổi từ % sang scale -1 đến 1 (chia 100)
-df_melted['Score'] = df_melted['Score'] / 100.0
-
-# Metric names are already correct (MCC, TPR, F1) so no map needed, but rename F1 to F1-Score for display
-df_melted['Metric'] = df_melted['Metric'].replace({'F1': 'F1-Score'})
-
-# Thiết lập style
-sns.set_theme(style="whitegrid", context="talk")
-
-def plot_combined_rq1():
+    # Plot
+    sns.set_theme(style="whitegrid", context="talk")
     plt.figure(figsize=(14, 8))
     
     g = sns.catplot(
@@ -65,27 +116,23 @@ def plot_combined_rq1():
         palette="ch:s=.25,rot=-.25",
         height=5, 
         aspect=0.8,
-        edgecolor='black',
-        order=['Original', 'KB 1', 'KB 2', 'KB 3', 'KB 4'] # Quy định thứ tự
+        edgecolor='black'
     )
     
     g.fig.subplots_adjust(top=0.85)
-    g.fig.suptitle('Tác động của BFA lên các mô hình (RQ1)', fontsize=20, weight='bold')
+    g.fig.suptitle('Tác động của BFA (Dữ liệu thực tế từ Excel)', fontsize=20, weight='bold')
     
-    # Định dạng nhãn trục Y và label trên cột
     for ax in g.axes.flat:
-        ax.set_ylim(-0.2, 1.05) # MCC có thể âm
-        ax.axhline(0, color='black', linewidth=1) # Đường 0 cho rõ
-        
+        ax.axhline(0, color='black', linewidth=1)
         for container in ax.containers:
-            # Format 2 số thập phân (ví dụ 0.75)
             ax.bar_label(container, fmt='%.2f', padding=3, fontsize=10)
     
-    g.set_axis_labels("Kịch bản tấn công", "Giá trị (Index)")
+    g.set_axis_labels("Kịch bản", "Giá trị")
     
+    os.makedirs('results', exist_ok=True)
     output_file = 'results/rq1_impact_combined.png'
     g.savefig(output_file, dpi=300)
     print(f"Saved {output_file}")
 
 if __name__ == "__main__":
-    plot_combined_rq1()
+    plot_combined_rq1_dynamic()

@@ -22,6 +22,7 @@ from support.dataman_extended import get_benign_loader_extended, get_dataset_inf
 from support.models.quantized_layers import quan_Conv1d, quan_Linear, CustomBlock
 from support.obfus_sig import ObfusSigRuntime
 from utils_excel import append_to_excel
+from sklearn.metrics import matthews_corrcoef, f1_score, confusion_matrix
 
 def ensure_dir_of(filepath):
     dirpath = os.path.dirname(filepath)
@@ -220,7 +221,94 @@ def _evaluate_with_dig(protected_model, test_loader, sus_score_range, device):
         correct += (predicted == y).sum().item()
     accuracy_after = 100 * correct / total if total > 0 else 0.0
     detection_rate = 100 * detected_attacks / len(test_loader.dataset)
-    return accuracy_after, detection_rate, detected_attacks, total
+    
+    # Calculate advanced metrics
+    # Note: If detected_attacks > 0, those samples are effectively 'blocked' or treated as attacks.
+    # For metric calculation on prediction quality:
+    # If the system blocks a sample, it doesn't output a class prediction.
+    # However, for pure performance comparison (Accuracy/MCC before vs after),
+    # we usually consider the prediction on those that PASSED, or we treat blocked as a special class?
+    # In this context, accuracy_after is usually "Accuracy on the allowed traffic" or "Robust Accuracy".
+    # But usually MCC/TPR is calculated on the *predictions*.
+    
+    # Let's gather predictions for metrics
+    y_true_all = []
+    y_pred_all = []
+    
+    # Use a second pass or modify loop above to collect. Modifying loop is better but memory constraint?
+    # Actually, let's just do it in the loop above.
+    # But wait, the loop above processes batch by batch.
+    # Re-writing the loop slightly to collect predictions.
+    pass
+
+def _evaluate_with_dig_full(protected_model, test_loader, sus_score_range, device):
+    correct = 0
+    total = 0
+    detected_attacks = 0
+    
+    y_true_list = []
+    y_pred_list = []
+    
+    for x, y in test_loader:
+        x, y = x.to(device), y.to(device)
+        batch_size = x.size(0)
+        
+        # DIG Check
+        x.requires_grad_(True)
+        try:
+            sus_score = protected_model.calc_sus_score(x).item()
+            if not (sus_score_range[0] <= sus_score <= sus_score_range[1]):
+                detected_attacks += batch_size
+        except RuntimeError:
+            pass
+        x.requires_grad_(False)
+        
+        # Inference
+        y_pred = protected_model(x)
+        _, predicted = torch.max(y_pred.data, 1)
+        total += y.size(0)
+        correct += (predicted == y).sum().item()
+        
+        y_true_list.extend(y.cpu().numpy())
+        y_pred_list.extend(predicted.cpu().numpy())
+        
+    accuracy_after = 100 * correct / total if total > 0 else 0.0
+    detection_rate = 100 * detected_attacks / len(test_loader.dataset)
+    
+    # Calculate Metrics
+    y_true = np.array(y_true_list)
+    y_pred = np.array(y_pred_list)
+    
+    try:
+        mcc = matthews_corrcoef(y_true, y_pred)
+    except:
+        mcc = 0
+        
+    try:
+        f1 = f1_score(y_true, y_pred, average='macro')
+    except:
+        f1 = 0
+        
+    # Calculate Avg TPR (Sensitivity)
+    try:
+        cm = confusion_matrix(y_true, y_pred)
+        # TPR = TP / (TP + FN)
+        # Macro average TPR
+        # cm[i, i] is TP for class i
+        # sum(cm[i, :]) is TP + FN (Total actual class i)
+        tpr_per_class = []
+        for i in range(len(cm)):
+            tp = cm[i, i]
+            total_actual = np.sum(cm[i, :])
+            if total_actual > 0:
+                tpr_per_class.append(tp / total_actual)
+            else:
+                tpr_per_class.append(0)
+        tpr = np.mean(tpr_per_class)
+    except:
+        tpr = 0
+        
+    return accuracy_after, detection_rate, mcc, tpr, f1
 
 
 def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mode='noise', attack_iters=25):
@@ -321,6 +409,8 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
             correct = 0
             total = 0
             detected_attacks = 0
+            y_true_list = []
+            y_pred_list = []
             for x, y in test_loader:
                 x, y = x.to(device), y.to(device)
                 batch_size = x.size(0)
@@ -339,15 +429,40 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
                 _, predicted = torch.max(y_pred.data, 1)
                 total += y.size(0)
                 correct += (predicted == y).sum().item()
+                y_true_list.extend(y.cpu().numpy())
+                y_pred_list.extend(predicted.cpu().numpy())
+                
             accuracy_after = 100 * correct / total if total > 0 else 0.0
             detection_rate = 100 * detected_attacks / len(test_loader.dataset)
+            
+            # Calculate Metrics
+            y_true = np.array(y_true_list)
+            y_pred = np.array(y_pred_list)
+            try: mcc = matthews_corrcoef(y_true, y_pred)
+            except: mcc = 0
+            try: f1 = f1_score(y_true, y_pred, average='macro')
+            except: f1 = 0
+            # TPR calculation
+            try:
+                cm = confusion_matrix(y_true, y_pred)
+                tpr_per_class = []
+                for i in range(len(cm)):
+                    tp = cm[i, i]
+                    total_actual = np.sum(cm[i, :])
+                    if total_actual > 0: tpr_per_class.append(tp / total_actual)
+                    else: tpr_per_class.append(0)
+                tpr = np.mean(tpr_per_class)
+            except: tpr = 0
+
             attack_results['attack_results'].append({
                 'mode': 'noise',
                 'strength': strength,
                 'accuracy_after': accuracy_after,
                 'accuracy_drop': original_accuracy - accuracy_after,
-                'detection_rate': detection_rate
-                'detection_rate': detection_rate
+                'detection_rate': detection_rate,
+                'mcc': mcc,
+                'tpr': tpr,
+                'f1': f1
             })
             
             # Excel Logging
@@ -360,7 +475,10 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
                 'Original Accuracy': original_accuracy,
                 'Accuracy After Attack': accuracy_after,
                 'Accuracy Drop': original_accuracy - accuracy_after,
-                'Detection Rate': detection_rate
+                'Detection Rate': detection_rate,
+                'MCC': mcc,
+                'TPR': tpr,
+                'F1': f1
             }
             append_to_excel('results/combined_metrics.xlsx', excel_data)
             
@@ -402,7 +520,7 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
                 if sig_alert or fp_alert or ctrl_action != 'none':
                     obfus_alert = f"SIG={sig_alert}, FP={fp_alert}, Action={ctrl_action}"
                     print(f"  [OBFUS-SIG] Alert detected: {obfus_alert}")
-            acc_i, det_i, det_cnt_i, total_i = _evaluate_with_dig(protected_model, test_loader, sus_score_range, device)
+            acc_i, det_i, mcc_i, tpr_i, f1_i = _evaluate_with_dig_full(protected_model, test_loader, sus_score_range, device)
             # Extract flip details if present
             module_name = info.get('module') if isinstance(info, dict) else None
             old_val = new_val = elem_idx = bit_idx = None
@@ -445,32 +563,11 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
         print(f"Per-iteration log saved to: {csv_path}")
         # Evaluate once after iterative attack
 
-        correct = 0
-        total = 0
-        detected_attacks = 0
-
-        for x, y in test_loader:
-            x, y = x.to(device), y.to(device)
-            batch_size = x.size(0)
-            if obfus_runtime is not None:
-                obfus_runtime.periodic_check(int(attack_iters) + 1)
-            x.requires_grad_(True)
-            try:
-                sus_score = protected_model.calc_sus_score(x).item()
-                if not (sus_score_range[0] <= sus_score <= sus_score_range[1]):
-                    # Count detections per-sample; do not skip accuracy
-                    detected_attacks += batch_size
-            except RuntimeError:
-                # If gradient calculation fails, assume not detected
-                pass
-            x.requires_grad_(False)
-
-            y_pred = protected_model(x)
-            _, predicted = torch.max(y_pred.data, 1)
-            total += y.size(0)
-            correct += (predicted == y).sum().item()
-        accuracy_after = 100 * correct / total if total > 0 else 0.0
-        detection_rate = 100 * detected_attacks / len(test_loader.dataset)
+        
+        # Re-evaluate correctly using the full function
+        accuracy_after, detection_rate, mcc, tpr, f1 = _evaluate_with_dig_full(protected_model, test_loader, sus_score_range, device)
+        detected_attacks = int(detection_rate * len(test_loader.dataset) / 100)
+        total = len(test_loader.dataset) # approximately
         attack_results['attack_results'].append({
             'mode': attack_mode,
             'iterations': int(attack_iters),
@@ -492,7 +589,19 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
             'Original Accuracy': original_accuracy,
             'Accuracy After Attack': accuracy_after,
             'Accuracy Drop': original_accuracy - accuracy_after,
-            'Detection Rate': detection_rate
+            'Detection Rate': detection_rate,
+            'MCC': mcc_i, # Use last iteration metrics or calculate fresh?
+            # The loop above calculated acc_i etc using _evaluate_with_dig_full (which returns 5 vals)
+            # BUT wait, the loop above stores it in acc_i, det_i, mcc_i...
+            # The loop runs for attack_iters.
+            # Then AFTER loop, there is another evaluation code block (lines 536-560) that duplicates evaluation logic manually.
+            # I must update THAT block too or metrics will be missing/wrong.
+            # Using the last iteration metrics `mcc_i` might be okay if it's the final state.
+            # BUT let's see, lines 536-560 re-evaluate.
+            # I should REPLACE lines 536-560 with a call to _evaluate_with_dig_full
+            'MCC': mcc,
+            'TPR': tpr,
+            'F1': f1
         }
         append_to_excel('results/combined_metrics.xlsx', excel_data)
         
