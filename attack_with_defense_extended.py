@@ -577,7 +577,6 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
             'samples_detected': detected_attacks,
             'samples_processed': total
         })
-        })
         
         # Excel Logging (Iterative)
         excel_data = {
