@@ -14,7 +14,9 @@ from support import models
 import numpy as np
 import json
 from support import torchdig
+from support import torchdig
 from support import torchdig_tabular
+from utils_excel import append_to_excel
 
 def ensure_dir_of(filepath):
     dirpath = os.path.dirname(filepath)
@@ -175,6 +177,20 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu'):
         
         print(f"  Accuracy after attack: {accuracy_after:.2f}%")
         print(f"  DIG detection rate: {detection_rate:.2f}%")
+        
+        # Excel Logging
+        excel_data = {
+            'Dataset': dataset_name,
+            'Model': model_name,
+            'Defense Type': 'DIG',
+            'Attack Mode': 'noise',
+            'Attack Strength': strength,
+            'Original Accuracy': original_accuracy,
+            'Accuracy After Attack': accuracy_after,
+            'Accuracy Drop': original_accuracy - accuracy_after,
+            'Detection Rate': detection_rate
+        }
+        append_to_excel('results/combined_metrics.xlsx', excel_data)
     
     # Save results
     output_dir = 'results/defense_results'
@@ -292,6 +308,20 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu'):
         
         print(f"  Accuracy after attack: {accuracy_after:.2f}%")
         print(f"  CIG detection rate: {cig_detection_rate:.2f}%")
+        
+        # Excel Logging
+        excel_data = {
+            'Dataset': dataset_name,
+            'Model': model_name,
+            'Defense Type': 'CIG',
+            'Attack Mode': 'noise',
+            'Attack Strength': strength,
+            'Original Accuracy': original_accuracy,
+            'Accuracy After Attack': accuracy_after,
+            'Accuracy Drop': original_accuracy - accuracy_after,
+            'Detection Rate': cig_detection_rate
+        }
+        append_to_excel('results/combined_metrics.xlsx', excel_data)
     
     # Save results
     output_dir = 'results/defense_results'
@@ -456,6 +486,20 @@ def attack_with_combined_protection(model_name, dataset_name, device='cpu'):
         print(f"  DIG detection rate: {dig_detection_rate:.2f}%")
         print(f"  CIG detection rate: {cig_detection_rate:.2f}%")
         print(f"  Combined detection rate: {combined_detection_rate:.2f}%")
+        
+        # Excel Logging
+        excel_data = {
+            'Dataset': dataset_name,
+            'Model': model_name,
+            'Defense Type': 'Combined (DIG+CIG)',
+            'Attack Mode': 'noise',
+            'Attack Strength': strength,
+            'Original Accuracy': original_accuracy,
+            'Accuracy After Attack': accuracy_after,
+            'Accuracy Drop': original_accuracy - accuracy_after,
+            'Detection Rate': combined_detection_rate
+        }
+        append_to_excel('results/combined_metrics.xlsx', excel_data)
     
     # Save results
     output_dir = 'results/defense_results'

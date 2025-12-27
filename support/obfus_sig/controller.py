@@ -5,28 +5,42 @@ import torch.nn as nn
 
 from .obfus_adapter import ObfusPair
 
+try:
+    from utils_excel import append_to_excel
+except ImportError:
+    append_to_excel = None
+
 
 class ControllerPolicy:
     """
     Fuse alerts from SigLite and BitFingerprint and trigger actions:
     - reseed all registered ObfusPairs
     - optionally switch to a shadow model
+    - proactive reseeding at regular intervals
     """
     def __init__(
         self,
         alert_mode: str = "or",  # "or" or "and"
         cooldown_steps: int = 1000,
-        proactive_period: int = 0,
+        proactive_period: int = 0,  # if > 0, reseed every N steps proactively
     ) -> None:
         assert alert_mode in ("or", "and")
         self.alert_mode = alert_mode
         self.cooldown_steps = int(cooldown_steps)
-        self.proactive_period = max(0, int(proactive_period))
-        self._last_reseed_step = -10**9
+        self.proactive_period = int(proactive_period)
+        self._last_action_step = -10**9
+        self._last_proactive_step = -10**9
         self._step = 0
         self._adapters: List[ObfusPair] = []
         self._shadow_model: Optional[nn.Module] = None
+        self._shadow_model: Optional[nn.Module] = None
         self._logs: List[Dict[str, object]] = []
+        self._excel_file = "results/controller_events.xlsx"
+        self._metadata = {}
+
+    def set_excel_logging(self, filepath: str, metadata: Dict[str, str]) -> None:
+        self._excel_file = filepath
+        self._metadata = metadata
 
     def register_adapters(self, adapters: List[ObfusPair]) -> None:
         self._adapters = adapters
@@ -38,13 +52,11 @@ class ControllerPolicy:
         values = list(alerts.values())
         if not values:
             return False
-        fire = any(v > 0 for v in values) if self.alert_mode == "or" else all(v > 0 for v in values)
-        return fire and (self._step - self._last_reseed_step >= self.cooldown_steps)
-
-    def _perform_reseed(self) -> None:
-        for adapter in self._adapters:
-            adapter.reseed()
-        self._last_reseed_step = self._step
+        if self.alert_mode == "or":
+            fire = any(v > 0 for v in values)
+        else:
+            fire = all(v > 0 for v in values)
+        return fire and (self._step - self._last_action_step >= self.cooldown_steps)
 
     def step(self, metrics: Dict[str, object]) -> Dict[str, object]:
         """
@@ -55,12 +67,24 @@ class ControllerPolicy:
             "fp": int(metrics.get("fp_alert", 0)),  # type: ignore[arg-type]
         }
         action_taken = "none"
-        if self._should_act(alerts):
-            self._perform_reseed()
-            action_taken = "reseed_adapters_alert"
-        elif self.proactive_period > 0 and (self._step - self._last_reseed_step) >= self.proactive_period:
-            self._perform_reseed()
-            action_taken = "reseed_adapters_proactive"
+        
+        # Check for proactive reseeding
+        if self.proactive_period > 0:
+            if self._step - self._last_proactive_step >= self.proactive_period:
+                for a in self._adapters:
+                    a.reseed()
+                action_taken = "proactive_reseed"
+                self._last_proactive_step = self._step
+                self._last_action_step = self._step
+        
+        # Check for reactive reseeding (alert-based)
+        if action_taken == "none" and self._should_act(alerts):
+            # Prioritize reseed
+            for a in self._adapters:
+                a.reseed()
+            action_taken = "reseed_adapters"
+            self._last_action_step = self._step
+        
         # Optionally escalate to shadow switch if repeated alerts (not implemented escalation logic here)
         log_entry = {
             "t": time.time(),
@@ -68,7 +92,22 @@ class ControllerPolicy:
             "alerts": alerts,
             "action": action_taken,
             "extras": {k: v for k, v in metrics.items() if k not in ("sig_alert", "fp_alert")},
+            "extras": {k: v for k, v in metrics.items() if k not in ("sig_alert", "fp_alert")},
         }
+        
+        # Log to Excel if action taken or alert fired
+        if action_taken != "none" or alerts["sig"] > 0 or alerts["fp"] > 0:
+            if append_to_excel:
+                row = {
+                    "Timestamp": log_entry["t"],
+                    "Step": self._step,
+                    "Action": action_taken,
+                    "Sig Alert": alerts["sig"],
+                    "FP Alert": alerts["fp"],
+                    **self._metadata
+                }
+                append_to_excel(self._excel_file, row)
+        
         self._logs.append(log_entry)
         self._step += 1
         return {"action": action_taken, "step": self._step - 1}

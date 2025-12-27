@@ -14,6 +14,9 @@ import numpy as np
 import json
 from support import torchdig
 from support import torchdig_tabular
+from utils_excel import append_to_excel
+from support.dataman_extended import get_benign_loader_extended, get_dataset_info
+from sklearn.metrics import matthews_corrcoef, f1_score, confusion_matrix
 
 def ensure_dir_of(filepath):
     dirpath = os.path.dirname(filepath)
@@ -32,12 +35,14 @@ def load_model(model_name, dataset_name, device='cpu'):
         torch_model = model_class(pretrained=False)
     else:
         model_class = getattr(models, model_name)
-        if dataset_name == 'IoTID20':
-            from support.dataman_iotid20 import preprocess_iotid20_data
-            _, _, input_size, num_classes = preprocess_iotid20_data('support/dataset/IoTID20')
+        # Get dataset info for model initialization
+        try:
+            from support.dataman_extended import get_dataset_info
+            input_size, num_classes = get_dataset_info(dataset_name)
             torch_model = model_class(input_size=input_size, output_size=num_classes)
-        else:
-            torch_model = model_class(pretrained=False)
+        except Exception as e:
+            print(f"Error getting dataset info: {e}")
+            return None
     
     torch_model.load_state_dict(torch.load(model_file, map_location='cpu'))
     torch_model.to(device)
@@ -115,6 +120,8 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu'):
         correct = 0
         total = 0
         detected_attacks = 0
+        y_true_list = []
+        y_pred_list = []
         
         for x, y in test_loader:
             x, y = x.to(device), y.to(device)
@@ -136,6 +143,26 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu'):
                 _, predicted = torch.max(y_pred.data, 1)
                 correct += (predicted == y).sum().item()
                 total += y.size(0)
+                y_true_list.extend(y.cpu().numpy())
+                y_pred_list.extend(predicted.cpu().numpy())
+        
+        # Calculate advanced metrics
+        y_true = np.array(y_true_list)
+        y_pred = np.array(y_pred_list)
+        try: mcc = matthews_corrcoef(y_true, y_pred)
+        except: mcc = 0
+        try: f1 = f1_score(y_true, y_pred, average='macro')
+        except: f1 = 0
+        try:
+            cm = confusion_matrix(y_true, y_pred)
+            tpr_per_class = []
+            for i in range(len(cm)):
+                tp = cm[i, i]
+                total_actual = np.sum(cm[i, :])
+                if total_actual > 0: tpr_per_class.append(tp / total_actual)
+                else: tpr_per_class.append(0)
+            tpr = np.mean(tpr_per_class)
+        except: tpr = 0
         
         accuracy_after = 100 * correct / total
         detection_rate = 100 * detected_attacks / (detected_attacks + total) if (detected_attacks + total) > 0 else 0
@@ -144,8 +171,29 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu'):
             'strength': strength,
             'accuracy_after': accuracy_after,
             'accuracy_drop': original_accuracy - accuracy_after,
-            'detection_rate': detection_rate
+            'detection_rate': detection_rate,
+            'mcc': mcc,
+            'tpr': tpr,
+            'f1': f1
         })
+        
+        # Record to Excel
+        excel_data = {
+            'Dataset': dataset_name,
+            'Model': model_name,
+            'Attack Strength': strength,
+            'Original Accuracy': original_accuracy,
+            'Accuracy After Attack': accuracy_after,
+            'Accuracy Drop': original_accuracy - accuracy_after,
+            'Detection Rate': detection_rate,
+            'Accuracy Drop': original_accuracy - accuracy_after,
+            'Detection Rate': detection_rate,
+            'Defense Type': 'DIG',
+            'MCC': mcc,
+            'TPR': tpr,
+            'F1': f1
+        }
+        append_to_excel('results/combined_metrics.xlsx', excel_data)
         
         print(f"  Accuracy after attack: {accuracy_after:.2f}%")
         print(f"  DIG detection rate: {detection_rate:.2f}%")
@@ -272,6 +320,19 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu'):
             'total_params_checked': total_params
         })
         
+        # Record to Excel
+        excel_data = {
+            'Dataset': dataset_name,
+            'Model': model_name,
+            'Attack Strength': strength,
+            'Original Accuracy': original_accuracy,
+            'Accuracy After Attack': accuracy_after,
+            'Accuracy Drop': original_accuracy - accuracy_after,
+            'Detection Rate': cig_detection_rate,
+            'Defense Type': 'CIG'
+        }
+        append_to_excel('results/combined_metrics.xlsx', excel_data)
+        
         print(f"  Accuracy after attack: {accuracy_after:.2f}%")
         print(f"  CIG detection rate: {cig_detection_rate:.2f}%")
     
@@ -330,6 +391,22 @@ def attack_with_combined_protection(model_name, dataset_name, device='cpu'):
             'combined_detection': combined_detection,
             'improvement': combined_detection - max(dig_detection, cig_detection)
         })
+        
+        # Record Combined result to Excel
+        # Assuming accuracy_after is available from dig_results (roughly same for same strength attack on same model)
+        # Note: dig_res contains 'accuracy_after'
+        
+        excel_data = {
+            'Dataset': dataset_name,
+            'Model': model_name,
+            'Attack Strength': strength,
+            'Original Accuracy': dig_results['original_accuracy'],
+            'Accuracy After Attack': dig_res['accuracy_after'],
+            'Accuracy Drop': dig_res['accuracy_drop'],
+            'Detection Rate': combined_detection,
+            'Defense Type': 'Combined (DIG+CIG)'
+        }
+        append_to_excel('results/combined_metrics.xlsx', excel_data)
     
     # Save combined results
     output_dir = 'results/defense_results'
