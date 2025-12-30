@@ -800,8 +800,8 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu', attack_mo
                 bit_idx,
                 f"{acc_i:.4f}",
                 f"{cig_rate_i:.4f}",
-                integrity_violations,
-                total_params,
+                layers_detected,
+                total_layers,
             ])
         # Save per-iteration CSV (CIG-specific filename)
         output_dir = 'results/defense_results'
@@ -811,7 +811,7 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu', attack_mo
             writer = csv.writer(f)
             writer.writerow([
                 'iteration','mode','module','old_val','new_val','elem_idx','bit_idx',
-                'accuracy_after_iter','cig_detection_rate_iter','integrity_violations','total_params_checked'
+                'accuracy_after_iter','cig_detection_rate_iter','layers_detected','total_layers'
             ])
             writer.writerows(iter_logs)
         print(f"Per-iteration CIG log saved to: {csv_path}")
