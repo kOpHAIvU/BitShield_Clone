@@ -736,6 +736,8 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu', attack_mo
         calib_x, calib_y = calib_batch[0].to(device), calib_batch[1].to(device)
         criterion = torch.nn.CrossEntropyLoss()
         iter_logs = []
+        attacked_modules = set()  # Track which modules were attacked
+        
         for i in range(int(attack_iters)):
             if attack_mode == 'pbs':
                 info = _progressive_bit_search(model, criterion, calib_x, calib_y, max_trials=16)
@@ -749,24 +751,32 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu', attack_mo
                 info = _progressive_bit_search(model, criterion, calib_x, calib_y, max_trials=16)
             else:
                 info = _random_flip_one_bit(model)
-            print(f"Iteration {i+1}/{attack_iters}: applied {attack_mode} step -> {info}")
-            # Track which layer was attacked
-            attacked_layer = info.get('module') if isinstance(info, dict) else None
             
-            # Count layers with integrity violations (layer-based detection)
-            layers_detected = 0
+            # Track which module was attacked
+            attacked_module = info.get('module') if isinstance(info, dict) else None
+            if attacked_module:
+                attacked_modules.add(attacked_module)
+            
+            print(f"Iteration {i+1}/{attack_iters}: applied {attack_mode} -> {attacked_module}")
+            
+            # Count how many of the ATTACKED modules CIG detected
+            detected_modules = set()
             total_layers = 0
-            detected_layer_names = []
             for name, param in model.named_parameters():
                 if name in original_params:
-                    diff = torch.abs(param.data - original_params[name])
                     total_layers += 1
+                    diff = torch.abs(param.data - original_params[name])
                     if torch.any(diff > 1e-6):  # Any change detected
-                        layers_detected += 1
-                        detected_layer_names.append(name.split('.')[0])  # Get layer name
+                        # Find which module this param belongs to
+                        module_name = '.'.join(name.split('.')[:-1])  # Remove .weight/.bias
+                        detected_modules.add(module_name)
             
-            cig_rate_i = 100 * layers_detected / total_layers if total_layers > 0 else 0
-            print(f"  CIG: {layers_detected}/{total_layers} layers detected ({cig_rate_i:.1f}%)")
+            # Detection rate = detected attacked modules / total attacked modules
+            attacked_detected = len(attacked_modules & detected_modules)
+            total_attacked = len(attacked_modules)
+            cig_rate_i = 100 * attacked_detected / total_attacked if total_attacked > 0 else 0
+            
+            print(f"  CIG: {attacked_detected}/{total_attacked} attacked layers detected ({cig_rate_i:.1f}%)")
             # Accuracy after iteration
             correct_i = 0
             total_i = 0
@@ -800,8 +810,8 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu', attack_mo
                 bit_idx,
                 f"{acc_i:.4f}",
                 f"{cig_rate_i:.4f}",
-                layers_detected,
-                total_layers,
+                attacked_detected,
+                total_attacked,
             ])
         # Save per-iteration CSV (CIG-specific filename)
         output_dir = 'results/defense_results'
@@ -811,21 +821,23 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu', attack_mo
             writer = csv.writer(f)
             writer.writerow([
                 'iteration','mode','module','old_val','new_val','elem_idx','bit_idx',
-                'accuracy_after_iter','cig_detection_rate_iter','layers_detected','total_layers'
+                'accuracy_after_iter','cig_detection_rate_iter','attacked_detected','total_attacked'
             ])
             writer.writerows(iter_logs)
         print(f"Per-iteration CIG log saved to: {csv_path}")
-        # Final evaluation after iterative attack - Layer-based detection
-        layers_detected = 0
-        total_layers = 0
-        detected_layers = []
+        
+        # Final evaluation - Detection rate on ATTACKED layers only
+        detected_modules = set()
         for name, param in model.named_parameters():
             if name in original_params:
                 diff = torch.abs(param.data - original_params[name])
-                total_layers += 1
-                if torch.any(diff > 1e-6):  # Any change in this layer
-                    layers_detected += 1
-                    detected_layers.append(name)
+                if torch.any(diff > 1e-6):
+                    module_name = '.'.join(name.split('.')[:-1])
+                    detected_modules.add(module_name)
+        
+        attacked_detected = len(attacked_modules & detected_modules)
+        total_attacked = len(attacked_modules)
+        
         correct = 0
         total = 0
         with torch.no_grad():
@@ -836,19 +848,18 @@ def attack_with_cig_simulation(model_name, dataset_name, device='cpu', attack_mo
                 total += y.size(0)
                 correct += (predicted == y).sum().item()
         accuracy_after = 100 * correct / total if total > 0 else 0.0
-        cig_detection_rate = 100 * layers_detected / total_layers if total_layers > 0 else 0
+        cig_detection_rate = 100 * attacked_detected / total_attacked if total_attacked > 0 else 0
         attack_results['attack_results'].append({
             'mode': attack_mode,
             'iterations': int(attack_iters),
             'accuracy_after': accuracy_after,
             'accuracy_drop': original_accuracy - accuracy_after,
             'cig_detection_rate': cig_detection_rate,
-            'layers_detected': layers_detected,
-            'total_layers': total_layers
+            'attacked_detected': attacked_detected,
+            'total_attacked': total_attacked
         })
         print(f"  Accuracy after attack: {accuracy_after:.2f}%")
-        print(f"  CIG: {layers_detected}/{total_layers} layers detected ({cig_detection_rate:.1f}%)")
-        print(f"  (With {attack_iters} bit-flips, max {attack_iters} unique layers can be affected)")
+        print(f"  CIG: {attacked_detected}/{total_attacked} attacked layers detected ({cig_detection_rate:.1f}%)")
 
         # Excel Logging (Iterative)
         excel_data = {
