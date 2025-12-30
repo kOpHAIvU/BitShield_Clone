@@ -521,6 +521,9 @@ def attack_with_dig_protection(model_name, dataset_name, device='cpu', attack_mo
                     obfus_alert = f"SIG={sig_alert}, FP={fp_alert}, Action={ctrl_action}"
                     print(f"  [OBFUS-SIG] Alert detected: {obfus_alert}")
             acc_i, det_i, mcc_i, tpr_i, f1_i = _evaluate_with_dig_full(protected_model, test_loader, sus_score_range, device)
+            # Calculate detected count and total for logging
+            total_i = len(test_loader.dataset)
+            det_cnt_i = int(det_i * total_i / 100)
             # Extract flip details if present
             module_name = info.get('module') if isinstance(info, dict) else None
             old_val = new_val = elem_idx = bit_idx = None
