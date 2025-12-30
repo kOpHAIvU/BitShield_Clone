@@ -1,8 +1,7 @@
 """
 BitShield Defense Visualization
-Reads results from:
-1. CSV iterlog files (primary)
-2. combined_metrics.xlsx (if available)
+- DIG: TPR (%) - Sample-level detection
+- CIG: Layers Detected (%) - Layer-level detection
 """
 
 import os
@@ -36,7 +35,6 @@ def load_from_excel():
     try:
         df = pd.read_excel(COMBINED_XLSX)
         print(f"Loaded Excel: {len(df)} rows")
-        print(f"Columns: {df.columns.tolist()}")
     except ImportError:
         print("openpyxl not installed. Trying CSV fallback...")
         return results, False
@@ -44,14 +42,7 @@ def load_from_excel():
         print(f"Error reading Excel: {e}")
         return results, False
     
-    # Print unique values for debugging
-    if 'Attack Mode' in df.columns:
-        print(f"Attack Modes: {df['Attack Mode'].unique()}")
-    if 'Defense Type' in df.columns:
-        print(f"Defense Types: {df['Defense Type'].unique()}")
-    
     for _, row in df.iterrows():
-        # Get defense type
         defense_type = str(row.get('Defense Type', '')).lower()
         if 'dig' in defense_type:
             defense = 'dig'
@@ -60,24 +51,19 @@ def load_from_excel():
         else:
             continue
         
-        # Get attack mode
         attack_mode_raw = str(row.get('Attack Mode', '')).lower()
         if 'random' in attack_mode_raw:
             attack_mode = 'random_flip'
         elif 'pbs' in attack_mode_raw:
             attack_mode = 'pbs'
         else:
-            continue  # Skip noise or other attacks
+            continue
         
         dataset = str(row.get('Dataset', 'Unknown'))
         model = str(row.get('Model', 'Unknown'))
-        
-        # Get iterations (try different column names)
-        iters = row.get('Attack Strength', row.get('Iterations', row.get('Attack Iters', 25)))
+        iters = row.get('Iterations', row.get('Attack Strength', 25))
         iters = int(iters) if pd.notna(iters) else 25
-        
-        # Get detection rate
-        det_rate = row.get('Detection Rate', row.get('DIG Detection Rate', 0))
+        det_rate = row.get('Detection Rate', 0)
         det_rate = float(det_rate) if pd.notna(det_rate) else 0
         
         key = (dataset, model)
@@ -96,12 +82,10 @@ def load_from_csv_iterlogs():
     }
     
     if not os.path.exists(RESULTS_DIR):
-        print(f"Directory not found: {RESULTS_DIR}")
         return results, False
     
     csv_files = glob.glob(os.path.join(RESULTS_DIR, '*_iterlog.csv'))
     if not csv_files:
-        print("No CSV iterlog files found")
         return results, False
     
     print(f"Found {len(csv_files)} CSV files")
@@ -112,32 +96,30 @@ def load_from_csv_iterlogs():
         try:
             df = pd.read_csv(filepath)
         except Exception as e:
-            print(f"  Error reading {filename}: {e}")
             continue
         
-        # Parse filename
         parts = filename.replace('_iterlog.csv', '').split('_')
         dataset = parts[0]
         
         # Determine defense type
-        defense = 'cig' if 'cig' in filename.lower() else 'dig'
+        is_cig = 'cig' in filename.lower()
+        defense = 'cig' if is_cig else 'dig'
         
         # Determine attack mode
         if 'random' in filename.lower():
             attack_mode = 'random_flip'
         elif 'pbs' in filename.lower():
             attack_mode = 'pbs'
-        else:
-            if 'mode' in df.columns and len(df) > 0:
-                mode_val = str(df['mode'].iloc[0]).lower()
-                if 'random' in mode_val:
-                    attack_mode = 'random_flip'
-                elif 'pbs' in mode_val:
-                    attack_mode = 'pbs'
-                else:
-                    continue
+        elif 'mode' in df.columns and len(df) > 0:
+            mode_val = str(df['mode'].iloc[0]).lower()
+            if 'random' in mode_val:
+                attack_mode = 'random_flip'
+            elif 'pbs' in mode_val:
+                attack_mode = 'pbs'
             else:
                 continue
+        else:
+            continue
         
         # Extract model name
         model_parts = []
@@ -148,31 +130,33 @@ def load_from_csv_iterlogs():
         model = '_'.join(model_parts) if model_parts else 'Unknown'
         
         # Get last iteration's data
-        if 'dig_detection_rate_iter' in df.columns:
-            last_row = df.iloc[-1]
-            max_iter = int(last_row['iteration'])
+        last_row = df.iloc[-1]
+        max_iter = int(last_row['iteration'])
+        
+        # Get detection rate column (different for DIG vs CIG)
+        if is_cig and 'cig_detection_rate_iter' in df.columns:
+            det_rate = float(last_row['cig_detection_rate_iter'])
+        elif 'dig_detection_rate_iter' in df.columns:
             det_rate = float(last_row['dig_detection_rate_iter'])
-            
-            key = (dataset, model)
-            results[defense][attack_mode][key][max_iter].append(det_rate)
-            print(f"  {defense.upper()}/{attack_mode}: {dataset}/{model} @ {max_iter}it = {det_rate:.1f}%")
+        else:
+            continue
+        
+        key = (dataset, model)
+        results[defense][attack_mode][key][max_iter].append(det_rate)
+        print(f"  {defense.upper()}/{attack_mode}: {dataset}/{model} @ {max_iter}it = {det_rate:.1f}%")
     
     return results, True
 
 
 def load_all_results():
     """Load from both Excel and CSV, merging results"""
-    # Try Excel first
     excel_results, excel_ok = load_from_excel()
-    
-    # Then try CSV
     csv_results, csv_ok = load_from_csv_iterlogs()
     
     if not excel_ok and not csv_ok:
         print("\n⚠️ No data found!")
-        return excel_results  # Return empty structure
+        return excel_results
     
-    # Merge results (CSV takes precedence if duplicate)
     merged = excel_results
     for defense in ['dig', 'cig']:
         for attack in ['random_flip', 'pbs']:
@@ -204,19 +188,23 @@ def visualize_all():
                 
                 fig, ax = plt.subplots(figsize=(12, 7))
                 
+                # Different colors and labels for DIG vs CIG
                 if defense == 'dig':
                     colors = {'ResNetSEBlockIoT': '#E94F37', 'SimpleCNNIoT': '#F77F00'}
                     ylabel = 'True Positive Rate - TPR (%)'
-                    ylim_max = None  # Auto
+                    title_metric = 'Sample-level Detection'
                 else:
                     colors = {'ResNetSEBlockIoT': '#2E86AB', 'SimpleCNNIoT': '#A23B72'}
-                    ylabel = 'Tamper Fraction (%)'
-                    ylim_max = 115
+                    ylabel = 'Layers Detected (%)'
+                    title_metric = 'Layer-level Detection'
                 
                 all_iters = set()
                 for key in models:
                     all_iters.update(data[key].keys())
                 iterations = sorted(all_iters)
+                
+                if not iterations:
+                    continue
                 
                 x = np.arange(len(iterations))
                 width = 0.35 if len(models) <= 2 else 0.25
@@ -245,13 +233,16 @@ def visualize_all():
                 attack_label = "Random Bit-Flip" if attack_mode == 'random_flip' else "PBS"
                 ax.set_xlabel('Số vòng lật bit (Bit-flip Iterations)', fontsize=14, fontweight='bold')
                 ax.set_ylabel(ylabel, fontsize=14, fontweight='bold')
-                ax.set_title(f'{defense.upper()} Detection: {attack_label} Attack\n({dataset})',
+                ax.set_title(f'{defense.upper()}: {attack_label} Attack ({title_metric})\n{dataset}',
                             fontsize=16, fontweight='bold', pad=20)
                 ax.set_xticks(x)
                 ax.set_xticklabels([str(it) for it in iterations], fontsize=12)
                 
-                if ylim_max:
-                    ax.set_ylim(0, ylim_max)
+                # Set y-axis limit
+                if defense == 'cig':
+                    # For CIG, show up to 100% (max layers)
+                    ax.set_ylim(0, max(110, max_val * 1.1))
+                    ax.axhline(y=100, color='green', linestyle='--', alpha=0.5, label='100% layers')
                 else:
                     ax.set_ylim(0, max(20, max_val * 1.3))
                 
@@ -260,8 +251,14 @@ def visualize_all():
                 ax.yaxis.grid(True, linestyle='--', alpha=0.7)
                 ax.set_axisbelow(True)
                 
+                # Add annotation explaining metric
                 if defense == 'cig':
-                    ax.axhline(y=100, color='green', linestyle='--', alpha=0.5)
+                    note = f'CIG đếm số layer có thay đổi / tổng số layer\n(Với N bit-flips, tối đa N layer bị ảnh hưởng)'
+                else:
+                    note = 'DIG đếm số input bị đánh dấu suspicious'
+                ax.annotate(note, xy=(0.02, 0.98), xycoords='axes fraction',
+                           fontsize=9, ha='left', va='top',
+                           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
                 
                 plt.tight_layout()
                 output_file = f'results/fig_{defense.upper()}_{attack_mode}_{dataset}.png'
@@ -270,12 +267,109 @@ def visualize_all():
                 plt.close()
 
 
+def create_combined_chart():
+    """Create a single chart comparing CIG and DIG side by side"""
+    results = load_all_results()
+    
+    for attack_mode in ['random_flip', 'pbs']:
+        cig_data = results['cig'][attack_mode]
+        dig_data = results['dig'][attack_mode]
+        
+        if not cig_data and not dig_data:
+            continue
+        
+        all_datasets = set(k[0] for k in cig_data.keys()) | set(k[0] for k in dig_data.keys())
+        
+        for dataset in all_datasets:
+            fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+            attack_label = "Random Bit-Flip" if attack_mode == 'random_flip' else "PBS"
+            
+            # CIG (left)
+            ax1 = axes[0]
+            cig_models = [(k[0], k[1]) for k in cig_data.keys() if k[0] == dataset]
+            if cig_models:
+                all_iters = set()
+                for key in cig_models:
+                    all_iters.update(cig_data[key].keys())
+                iterations = sorted(all_iters)
+                
+                if iterations:
+                    x = np.arange(len(iterations))
+                    width = 0.35
+                    cig_colors = {'ResNetSEBlockIoT': '#2E86AB', 'SimpleCNNIoT': '#A23B72'}
+                    
+                    for i, key in enumerate(cig_models):
+                        model = key[1]
+                        values = [np.mean(cig_data[key].get(it, [0])) for it in iterations]
+                        offset = width * (i - len(cig_models)/2 + 0.5)
+                        bars = ax1.bar(x + offset, values, width, label=model,
+                                      color=cig_colors.get(model, f'C{i}'))
+                        for bar, val in zip(bars, values):
+                            ax1.annotate(f'{val:.1f}%', xy=(bar.get_x() + bar.get_width()/2, bar.get_height()),
+                                        xytext=(0, 3), textcoords="offset points",
+                                        ha='center', va='bottom', fontsize=9, fontweight='bold')
+                    
+                    ax1.set_xlabel('Số vòng lật bit', fontsize=13, fontweight='bold')
+                    ax1.set_ylabel('Layers Detected (%)', fontsize=13, fontweight='bold')
+                    ax1.set_title(f'CIG: {attack_label}\n(Layer-level)', fontsize=14, fontweight='bold')
+                    ax1.set_xticks(x)
+                    ax1.set_xticklabels([str(it) for it in iterations])
+                    ax1.set_ylim(0, 110)
+                    ax1.axhline(y=100, color='green', linestyle='--', alpha=0.5)
+                    ax1.legend(loc='lower right', fontsize=10)
+                    ax1.yaxis.grid(True, linestyle='--', alpha=0.5)
+            
+            # DIG (right)
+            ax2 = axes[1]
+            dig_models = [(k[0], k[1]) for k in dig_data.keys() if k[0] == dataset]
+            if dig_models:
+                all_iters = set()
+                for key in dig_models:
+                    all_iters.update(dig_data[key].keys())
+                iterations = sorted(all_iters)
+                
+                if iterations:
+                    x = np.arange(len(iterations))
+                    dig_colors = {'ResNetSEBlockIoT': '#E94F37', 'SimpleCNNIoT': '#F77F00'}
+                    
+                    max_val = 0
+                    for i, key in enumerate(dig_models):
+                        model = key[1]
+                        values = [np.mean(dig_data[key].get(it, [0])) for it in iterations]
+                        max_val = max(max_val, max(values) if values else 0)
+                        offset = width * (i - len(dig_models)/2 + 0.5)
+                        bars = ax2.bar(x + offset, values, width, label=model,
+                                      color=dig_colors.get(model, f'C{i}'))
+                        for bar, val in zip(bars, values):
+                            ax2.annotate(f'{val:.1f}%', xy=(bar.get_x() + bar.get_width()/2, bar.get_height()),
+                                        xytext=(0, 3), textcoords="offset points",
+                                        ha='center', va='bottom', fontsize=9, fontweight='bold')
+                    
+                    ax2.set_xlabel('Số vòng lật bit', fontsize=13, fontweight='bold')
+                    ax2.set_ylabel('True Positive Rate (%)', fontsize=13, fontweight='bold')
+                    ax2.set_title(f'DIG: {attack_label}\n(Sample-level)', fontsize=14, fontweight='bold')
+                    ax2.set_xticks(x)
+                    ax2.set_xticklabels([str(it) for it in iterations])
+                    ax2.set_ylim(0, max(20, max_val * 1.3))
+                    ax2.legend(loc='upper right', fontsize=10)
+                    ax2.yaxis.grid(True, linestyle='--', alpha=0.5)
+            
+            plt.suptitle(f'So sánh CIG và DIG: {attack_label} trên {dataset}',
+                        fontsize=15, fontweight='bold', y=1.02)
+            plt.tight_layout()
+            
+            output_file = f'results/fig_comparison_{attack_mode}_{dataset}.png'
+            plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor='white')
+            print(f"Saved: {output_file}")
+            plt.close()
+
+
 def print_summary():
     """Print data summary"""
     results = load_all_results()
     
     print("\n" + "="*60)
-    print("FINAL DATA SUMMARY")
+    print("DATA SUMMARY")
     print("="*60)
     
     has_data = False
@@ -284,15 +378,15 @@ def print_summary():
             data = results[defense][attack]
             if data:
                 has_data = True
-                print(f"\n{defense.upper()} - {attack}:")
+                metric = "Layers Detected" if defense == 'cig' else "TPR"
+                print(f"\n{defense.upper()} - {attack} ({metric}):")
                 for key, iters_data in data.items():
                     print(f"  {key[0]} / {key[1]}:")
                     for iters, rates in sorted(iters_data.items()):
-                        print(f"    {iters} iterations: {np.mean(rates):.1f}%")
+                        print(f"    {iters} bit-flips: {np.mean(rates):.1f}%")
     
     if not has_data:
-        print("\n⚠️ No Random Bit-Flip or PBS data found!")
-        print("Run experiments with --attack-mode random_flip or --attack-mode pbs")
+        print("\nNo Random Bit-Flip or PBS data found!")
 
 
 if __name__ == "__main__":
@@ -302,8 +396,11 @@ if __name__ == "__main__":
     
     print_summary()
     
-    print("\n--- Generating Charts ---")
+    print("\n--- Generating Individual Charts ---")
     visualize_all()
+    
+    print("\n--- Generating Comparison Charts ---")
+    create_combined_chart()
     
     print("\n" + "="*60)
     print("Done!")
