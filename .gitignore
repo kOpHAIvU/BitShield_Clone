@@ -79,3 +79,6 @@ save
 !dvc.lock
 !.merge_file_*
 *.md
+docs/detection_flow.mmd
+docs/read_report.py
+docs/report_dump.txt

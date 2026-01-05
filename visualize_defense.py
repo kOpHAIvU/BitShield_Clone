@@ -210,6 +210,7 @@ def visualize_all():
                 width = 0.35 if len(models) <= 2 else 0.25
                 
                 max_val = 0
+                min_val = 100
                 for i, key in enumerate(models):
                     model = key[1]
                     values = []
@@ -218,6 +219,8 @@ def visualize_all():
                         val = np.mean(rates) if rates else 0
                         values.append(val)
                         max_val = max(max_val, val)
+                        if val > 0:
+                            min_val = min(min_val, val)
                     
                     offset = width * (i - len(models)/2 + 0.5)
                     color = colors.get(model, f'C{i}')
@@ -238,13 +241,25 @@ def visualize_all():
                 ax.set_xticks(x)
                 ax.set_xticklabels([str(it) for it in iterations], fontsize=12)
                 
-                # Set y-axis limit
-                if defense == 'cig':
-                    # For CIG, show up to 100% (max layers)
-                    ax.set_ylim(0, max(110, max_val * 1.1))
-                    ax.axhline(y=100, color='green', linestyle='--', alpha=0.5, label='100% layers')
+                # Dynamic y-axis scaling based on data range
+                data_range = max_val - min_val
+                if data_range < 30 and min_val > 20:
+                    # Values are close together - zoom in to show differences
+                    y_min = max(0, min_val - 10)
+                    y_max = min(110, max_val + 10)
+                    ax.set_ylim(y_min, y_max)
+                    # Add note about truncated axis
+                    ax.annotate(f'⚠️ Trục Y đã thu hẹp ({y_min:.0f}-{y_max:.0f}%) để thể hiện rõ sự khác biệt',
+                               xy=(0.5, 0.02), xycoords='axes fraction',
+                               fontsize=9, ha='center', va='bottom',
+                               bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
                 else:
-                    ax.set_ylim(0, max(20, max_val * 1.3))
+                    # Normal scaling
+                    if defense == 'cig':
+                        ax.set_ylim(0, max(110, max_val * 1.1))
+                        ax.axhline(y=100, color='green', linestyle='--', alpha=0.5, label='100% layers')
+                    else:
+                        ax.set_ylim(0, max(20, max_val * 1.3))
                 
                 ax.legend(title='Model', loc='upper left' if defense == 'dig' else 'lower right',
                          fontsize=11, title_fontsize=12, framealpha=0.9)
@@ -298,9 +313,15 @@ def create_combined_chart():
                     width = 0.35
                     cig_colors = {'ResNetSEBlockIoT': '#2E86AB', 'SimpleCNNIoT': '#A23B72'}
                     
+                    max_val_cig = 0
+                    min_val_cig = 100
                     for i, key in enumerate(cig_models):
                         model = key[1]
                         values = [np.mean(cig_data[key].get(it, [0])) for it in iterations]
+                        for v in values:
+                            max_val_cig = max(max_val_cig, v)
+                            if v > 0:
+                                min_val_cig = min(min_val_cig, v)
                         offset = width * (i - len(cig_models)/2 + 0.5)
                         bars = ax1.bar(x + offset, values, width, label=model,
                                       color=cig_colors.get(model, f'C{i}'))
@@ -309,13 +330,26 @@ def create_combined_chart():
                                         xytext=(0, 3), textcoords="offset points",
                                         ha='center', va='bottom', fontsize=9, fontweight='bold')
                     
-                    ax1.set_xlabel('Số vòng lật bit', fontsize=13, fontweight='bold')
-                    ax1.set_ylabel('Layers Detected (%)', fontsize=13, fontweight='bold')
-                    ax1.set_title(f'CIG: {attack_label}\n(Layer-level)', fontsize=14, fontweight='bold')
+                    ax1.set_xlabel('Số vòng lật bit (Bit-Flip Iterations)', fontsize=13, fontweight='bold')
+                    ax1.set_ylabel('Layer Detection Rate (%)', fontsize=13, fontweight='bold')
+                    ax1.set_title(f'CIG: {attack_label} Attack (Layer-level Detection)\n{dataset}', fontsize=14, fontweight='bold')
                     ax1.set_xticks(x)
                     ax1.set_xticklabels([str(it) for it in iterations])
-                    ax1.set_ylim(0, 110)
-                    ax1.axhline(y=100, color='green', linestyle='--', alpha=0.5)
+                    
+                    # Dynamic y-axis scaling for CIG
+                    data_range_cig = max_val_cig - min_val_cig
+                    if data_range_cig < 30 and min_val_cig > 20:
+                        y_min = max(0, min_val_cig - 10)
+                        y_max = min(110, max_val_cig + 10)
+                        ax1.set_ylim(y_min, y_max)
+                        ax1.annotate(f'⚠️ Trục Y: {y_min:.0f}-{y_max:.0f}%',
+                                   xy=(0.5, 0.02), xycoords='axes fraction',
+                                   fontsize=8, ha='center', va='bottom',
+                                   bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
+                    else:
+                        ax1.set_ylim(0, 110)
+                        ax1.axhline(y=100, color='green', linestyle='--', alpha=0.5)
+                    
                     ax1.legend(loc='lower right', fontsize=10)
                     ax1.yaxis.grid(True, linestyle='--', alpha=0.5)
             
@@ -332,11 +366,15 @@ def create_combined_chart():
                     x = np.arange(len(iterations))
                     dig_colors = {'ResNetSEBlockIoT': '#E94F37', 'SimpleCNNIoT': '#F77F00'}
                     
-                    max_val = 0
+                    max_val_dig = 0
+                    min_val_dig = 100
                     for i, key in enumerate(dig_models):
                         model = key[1]
                         values = [np.mean(dig_data[key].get(it, [0])) for it in iterations]
-                        max_val = max(max_val, max(values) if values else 0)
+                        for v in values:
+                            max_val_dig = max(max_val_dig, v)
+                            if v > 0:
+                                min_val_dig = min(min_val_dig, v)
                         offset = width * (i - len(dig_models)/2 + 0.5)
                         bars = ax2.bar(x + offset, values, width, label=model,
                                       color=dig_colors.get(model, f'C{i}'))
@@ -345,12 +383,25 @@ def create_combined_chart():
                                         xytext=(0, 3), textcoords="offset points",
                                         ha='center', va='bottom', fontsize=9, fontweight='bold')
                     
-                    ax2.set_xlabel('Số vòng lật bit', fontsize=13, fontweight='bold')
-                    ax2.set_ylabel('True Positive Rate (%)', fontsize=13, fontweight='bold')
-                    ax2.set_title(f'DIG: {attack_label}\n(Sample-level)', fontsize=14, fontweight='bold')
+                    ax2.set_xlabel('Số vòng lật bit (Bit-Flip Iterations)', fontsize=13, fontweight='bold')
+                    ax2.set_ylabel('True Positive Rate - TPR (%)', fontsize=13, fontweight='bold')
+                    ax2.set_title(f'DIG: {attack_label} Attack (Sample-level Detection)\n{dataset}', fontsize=14, fontweight='bold')
                     ax2.set_xticks(x)
                     ax2.set_xticklabels([str(it) for it in iterations])
-                    ax2.set_ylim(0, max(20, max_val * 1.3))
+                    
+                    # Dynamic y-axis scaling for DIG
+                    data_range_dig = max_val_dig - min_val_dig
+                    if data_range_dig < 30 and min_val_dig > 20:
+                        y_min = max(0, min_val_dig - 10)
+                        y_max = min(110, max_val_dig + 10)
+                        ax2.set_ylim(y_min, y_max)
+                        ax2.annotate(f'⚠️ Trục Y: {y_min:.0f}-{y_max:.0f}%',
+                                   xy=(0.5, 0.02), xycoords='axes fraction',
+                                   fontsize=8, ha='center', va='bottom',
+                                   bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
+                    else:
+                        ax2.set_ylim(0, max(20, max_val_dig * 1.3))
+                    
                     ax2.legend(loc='upper right', fontsize=10)
                     ax2.yaxis.grid(True, linestyle='--', alpha=0.5)
             
