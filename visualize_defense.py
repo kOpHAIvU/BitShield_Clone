@@ -248,11 +248,6 @@ def visualize_all():
                     y_min = max(0, min_val - 10)
                     y_max = min(110, max_val + 10)
                     ax.set_ylim(y_min, y_max)
-                    # Add note about truncated axis
-                    ax.annotate(f'⚠️ Trục Y đã thu hẹp ({y_min:.0f}-{y_max:.0f}%) để thể hiện rõ sự khác biệt',
-                               xy=(0.5, 0.02), xycoords='axes fraction',
-                               fontsize=9, ha='center', va='bottom',
-                               bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
                 else:
                     # Normal scaling
                     if defense == 'cig':
