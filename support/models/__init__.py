@@ -11,3 +11,5 @@ from .resnet_seblock_iot import *
 from .simple_cnn_iot import *
 from .purecnn_iot import *
 from .efficientcnn_iot import *
+from .tabular_dnn import *
+
